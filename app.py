@@ -1,344 +1,401 @@
 import streamlit as st
 import json
 import plotly.graph_objects as go
+import pandas as pd
 
-# --- ERROR HANDLING FOR BACKEND ---
-# This ensures the UI renders even if backend logic fails or files are missing
-try:
-    from f1_explain import explain_driver, compare_drivers
-except ImportError:
-    st.error("⚠️ Backend modules not found. Please ensure f1_explain.py is in the directory.")
-
-
-    def explain_driver(d, q):
-        return f"Mock analysis for {d}: {q}"
-
-
-    def compare_drivers(d1, d2):
-        return f"Mock comparison between {d1} and {d2}"
-
-# --- PAGE CONFIGURATION ---
+# --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="F1 Performance Analyst AI",
+    page_title="F1 Telemetry Terminal",
     layout="wide",
     page_icon="🏎️",
     initial_sidebar_state="expanded"
 )
 
-# --- LOAD DATA ---
+# --- 2. BACKEND CONNECTIONS ---
+
+# A. Knowledge Base (JSON / Text Analysis)
+try:
+    # Importing analysis functions
+    from f1_explain import explain_driver, compare_drivers, explain_similarity_multi
+
+    explain_status = "ONLINE"
+except ImportError:
+    # Fallbacks
+    def explain_driver(d, q):
+        return f"Simulation Data for {d}: {q} \n[Backend Missing]"
+
+
+    def compare_drivers(d1, d2):
+        return f"Comparison {d1} vs {d2} \n[Backend Missing]"
+
+
+    def explain_similarity_multi(t, m):
+        return "Analysis Unavailable"
+
+
+    explain_status = "OFFLINE"
+
+# B. Vector Engine (Math)
+try:
+    # Importing vector logic
+    from f1_chat import get_similar_drivers
+
+    vector_status = "ONLINE"
+except ImportError:
+    def get_similar_drivers(t, d):
+        return []
+
+
+    vector_status = "OFFLINE"
+
+# --- 3. LOAD JSON DATA ---
 try:
     with open("driver_knowledge.json", "r") as f:
         DRIVER_DATA = json.load(f)
     DRIVER_NAMES = sorted(list({d["surname"] for d in DRIVER_DATA}))
 except FileNotFoundError:
-    st.warning("⚠️ driver_knowledge.json not found. Using placeholder data.")
     DRIVER_DATA = []
     DRIVER_NAMES = ["Verstappen", "Hamilton", "Leclerc", "Norris", "Alonso"]
 
+# --- 4. ASSETS (COLORS) ---
+TEAM_CONFIG = {
+    "Red Bull": {"color": "#061D42", "accent": "#3671C6"},
+    "Mercedes": {"color": "#27F4D2", "accent": "#00A19B"},
+    "Ferrari": {"color": "#FF1801", "accent": "#C30000"},
+    "McLaren": {"color": "#FF8700", "accent": "#000000"},
+    "Aston Martin": {"color": "#006F62", "accent": "#CEDC00"},
+    "Alpine": {"color": "#0090FF", "accent": "#FD4BC7"},
+    "Williams": {"color": "#005AFF", "accent": "#00A0DE"},
+    "Haas": {"color": "#B6BABD", "accent": "#D0102E"},
+    "Sauber": {"color": "#52E252", "accent": "#000000"},
+    "RB": {"color": "#6692FF", "accent": "#FFFFFF"},
+}
 
-# --- CUSTOM CSS (THE VISUALS) ---
-def local_css():
+
+# --- 5. VISUAL ENGINE (CSS) ---
+def inject_custom_css():
     st.markdown("""
     <style>
-        /* Import Titillium Web - A very 'tech/sport' font */
-        @import url('https://fonts.googleapis.com/css2?family=Titillium+Web:wght@300;400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Orbitron:wght@500;700;900&display=swap');
 
-        /* APP BACKGROUND */
+        /* MAIN CONTAINER */
         .stApp {
-            background-color: #0e1117;
-            background-image: radial-gradient(circle at 50% 0%, #1c1c2e 0%, #0e1117 70%);
-            color: #ffffff;
-            font-family: 'Titillium Web', sans-serif;
+            background-color: #050505;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 30px 30px;
+            color: #E0E0E0;
+            font-family: 'Inter', sans-serif;
         }
 
         /* TYPOGRAPHY */
-        h1, h2, h3, h4 {
-            font-family: 'Titillium Web', sans-serif;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
+        h1, h2, h3 { font-family: 'Orbitron', sans-serif; text-transform: uppercase; letter-spacing: 2px; }
 
         h1 {
-            color: #FF1801; /* F1 Red */
-            font-weight: 800;
-            font-style: italic;
-            text-shadow: 0px 0px 10px rgba(255, 24, 1, 0.3);
+            background: linear-gradient(90deg, #FF1801, #FF8700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 900;
+            font-size: 3rem !important;
         }
 
-        /* SIDEBAR */
-        section[data-testid="stSidebar"] {
-            background-color: #121212;
-            border-right: 1px solid #333;
+        /* DIGITAL BADGE */
+        .driver-badge {
+            background: rgba(20, 20, 25, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 5px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            transition: transform 0.2s;
+            margin-bottom: 20px;
         }
+        .driver-badge:hover { transform: scale(1.02); background: rgba(30, 30, 35, 1); }
+        .driver-initials { font-family: 'Orbitron', sans-serif; font-size: 2.5rem; font-weight: 900; color: #fff; width: 80px; text-align: center; }
+        .driver-info h4 { margin: 0; font-size: 1.2rem; color: #fff; text-transform: uppercase; }
+        .driver-info p { margin: 0; font-size: 0.8rem; color: #888; text-transform: uppercase; }
+
+        /* MATCH CARD (NEW) */
+        .match-card {
+            background: #111;
+            border: 1px solid #3671C6;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .match-card:hover { transform: translateY(-5px); box-shadow: 0 0 15px rgba(54, 113, 198, 0.3); }
 
         /* BUTTONS */
         div.stButton > button {
-            background-color: #FF1801;
+            background: linear-gradient(90deg, #FF1801 0%, #D00000 100%);
             color: white;
             border: none;
-            border-radius: 0px; /* Sharp edges for racing look */
-            padding: 0.5rem 1rem;
-            font-weight: bold;
+            border-radius: 4px;
+            padding: 12px 24px;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
             text-transform: uppercase;
-            clip-path: polygon(10% 0, 100% 0, 100% 100%, 0% 100%); /* Angled button */
+            letter-spacing: 1px;
             transition: all 0.3s ease;
             width: 100%;
         }
+        div.stButton > button:hover { box-shadow: 0 0 20px rgba(255, 24, 1, 0.6); transform: translateY(-2px); }
 
-        div.stButton > button:hover {
-            background-color: #D90000;
-            transform: translateX(5px);
-        }
-
-        /* RESULT CARDS */
-        .result-card {
-            background-color: #1a1a24;
-            border-top: 3px solid #FF1801;
-            padding: 25px;
-            border-radius: 5px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
-            margin-top: 20px;
-        }
-
-        .result-text {
-            font-size: 1.1rem;
-            color: #e0e0e0;
+        /* TERMINAL BOX (Chat/Output) */
+        .terminal-box {
+            background-color: #0D1117;
+            border: 1px solid #30363D;
+            border-radius: 6px;
+            padding: 20px;
+            font-family: 'Inter', monospace;
             line-height: 1.6;
+            border-left: 3px solid #FF1801;
+            overflow-x: auto;
         }
-
-        /* METRIC BOXES */
-        .metric-box {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 10px;
-            border-radius: 5px;
-            text-align: center;
-            border: 1px solid #333;
-        }
-        .metric-label { font-size: 0.8rem; color: #888; text-transform: uppercase; }
-        .metric-value { font-size: 1.5rem; font-weight: bold; color: white; }
-
-        /* FOOTER */
-        .footer {
-            position: fixed; bottom: 0; left: 0; width: 100%;
-            background: #000; color: #444; text-align: center;
-            font-size: 0.7rem; padding: 5px; z-index: 100;
+        .terminal-header {
+            font-family: 'Orbitron';
+            font-size: 0.8rem;
+            color: #58A6FF;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #30363D;
+            padding-bottom: 5px;
         }
     </style>
     """, unsafe_allow_html=True)
 
 
-local_css()
+inject_custom_css()
 
 
-# --- HELPER: RADAR CHART GENERATOR ---
-def create_radar_chart(driver_a_stats, driver_b_stats):
+# --- 6. HELPER FUNCTIONS ---
+
+def get_team_color(team_name):
+    if not team_name: return "#444444"
+    for key, val in TEAM_CONFIG.items():
+        if key.lower() in team_name.lower():
+            return val["color"]
+    return "#444444"
+
+
+def render_digital_badge(driver_name, driver_data):
+    team = driver_data.get("team_name", "Unknown Team")
+    color = get_team_color(team)
+    initials = driver_name[:3].upper()
+    races = driver_data.get('races', 0)
+
+    html = f"""
+    <div class="driver-badge" style="border-left-color: {color}; box-shadow: -5px 0 15px -5px {color}80;">
+        <div style="display:flex; align-items:center; gap:15px;">
+            <div class="driver-initials" style="text-shadow: 0 0 10px {color};">{initials}</div>
+            <div class="driver-info">
+                <h4>{driver_name}</h4>
+                <p style="color: {color};">{team}</p>
+            </div>
+        </div>
+        <div>
+            <span style="background:#1A1A1A; padding:5px 15px; border-radius:20px; font-size:0.8rem; border:1px solid #333; color:#ccc;">
+                Races: {races}
+            </span>
+        </div>
+    </div>
     """
-    Creates a comparative radar chart.
-    Note: We invert some stats (like avg_finish) so that 'Outer' is always 'Better'.
-    """
-    categories = ['Avg Position', 'Consistency', 'Team Delta', 'Experience']
+    return html
 
-    # --- SCORING LOGIC (Normalizing to 0-100) ---
-    # 1. Avg Finish: Finish 1 = Score 100. Finish 20 = Score 0.
-    def score_finish(val): return max(0, (22 - val) / 22 * 100)
 
-    # 2. Consistency (Std Dev): 0 deviation = Score 100. 10 deviation = Score 0.
-    def score_const(val): return max(0, (12 - val) / 12 * 100)
+def create_neon_radar(driver_a, driver_b, data_a, data_b):
+    # Safety Helper to prevent crashes if data is missing
+    def safe_get(d, k, default):
+        val = d.get(k)
+        return val if val is not None else default
 
-    # 3. Team Delta: 0 (matches team) = Score 80. Negative (beats team) -> 100. Positive (loses) -> 0.
-    # We assume 'delta_vs_team' is a position or time delta.
-    def score_delta(val): return max(0, (10 - val) / 10 * 100)
+    categories = ['Avg Pos', 'Consistency', 'Team Delta', 'Exp']
 
-    # 4. Experience: Cap at 100 races
-    def score_exp(val): return min(100, (val / 100) * 100)
+    def norm(val, max_v, invert=False):
+        if invert: return max(0, (max_v - val) / max_v * 100)
+        return min(100, (val / max_v) * 100)
 
-    # Process Driver A
     val_a = [
-        score_finish(driver_a_stats.get('avg_finish', 20)),
-        score_const(driver_a_stats.get('finish_std', 10)),
-        score_delta(driver_a_stats.get('delta_vs_team', 5)),
-        score_exp(driver_a_stats.get('races', 0))
+        norm(safe_get(data_a, 'avg_finish', 20), 22, True),
+        norm(safe_get(data_a, 'finish_std', 10), 12, True),
+        norm(safe_get(data_a, 'delta_vs_team', 5), 8, True),
+        norm(safe_get(data_a, 'races', 0), 150, False)
     ]
-
-    # Process Driver B
     val_b = [
-        score_finish(driver_b_stats.get('avg_finish', 20)),
-        score_const(driver_b_stats.get('finish_std', 10)),
-        score_delta(driver_b_stats.get('delta_vs_team', 5)),
-        score_exp(driver_b_stats.get('races', 0))
+        norm(safe_get(data_b, 'avg_finish', 20), 22, True),
+        norm(safe_get(data_b, 'finish_std', 10), 12, True),
+        norm(safe_get(data_b, 'delta_vs_team', 5), 8, True),
+        norm(safe_get(data_b, 'races', 0), 150, False)
     ]
 
     fig = go.Figure()
+    fig.add_trace(
+        go.Scatterpolar(r=val_a, theta=categories, fill='toself', name=driver_a, line=dict(color='#FF1801', width=3),
+                        fillcolor='rgba(255, 24, 1, 0.2)'))
+    fig.add_trace(
+        go.Scatterpolar(r=val_b, theta=categories, fill='toself', name=driver_b, line=dict(color='#00F0FF', width=3),
+                        fillcolor='rgba(0, 240, 255, 0.2)'))
 
-    # Driver A Layer
-    fig.add_trace(go.Scatterpolar(
-        r=val_a, theta=categories,
-        fill='toself', name=driver_a_stats['surname'],
-        line_color='#FF1801', opacity=0.7
-    ))
-
-    # Driver B Layer
-    fig.add_trace(go.Scatterpolar(
-        r=val_b, theta=categories,
-        fill='toself', name=driver_b_stats['surname'],
-        line_color='#FFFFFF', opacity=0.6
-    ))
-
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(visible=True, range=[0, 100], showticklabels=False, linecolor='#333'),
-            bgcolor='rgba(255,255,255,0.05)',
-            gridshape='linear'
-        ),
-        paper_bgcolor='rgba(0,0,0,0)',  # Transparent
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white', family="Titillium Web"),
-        margin=dict(l=40, r=40, t=20, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100], showticklabels=False, linecolor='#333'),
+                                 bgcolor='rgba(0,0,0,0)'),
+                      paper_bgcolor='rgba(0,0,0,0)', font=dict(color='white', family="Inter"),
+                      margin=dict(t=20, b=20, l=40, r=40), legend=dict(orientation="h", y=1.1))
     return fig
 
 
-# --- SIDEBAR NAV ---
+# --- 7. MAIN LAYOUT ---
+
+# Header
+col1, col2 = st.columns([3, 1])
+with col1:
+    st.markdown("<h1>F1 TELEMETRY <span style='color:#fff; font-weight:100; font-size:2rem;'>TERMINAL</span></h1>",
+                unsafe_allow_html=True)
+with col2:
+    st.markdown(
+        "<div style='text-align:right; font-family:Orbitron; color:#FF1801; font-size:2rem; padding-top:10px;'>LIVE_DATA // ON</div>",
+        unsafe_allow_html=True)
+
+st.markdown("---")
+
+# Navigation Sidebar
 with st.sidebar:
-    st.title("🏎️ Paddock")
-    st.markdown("---")
+    st.markdown("### ⚙️ CONTROLS")
     mode = st.radio(
-        "Select Telemetry Mode",
-        ["Single Driver Analysis", "Driver Comparison"],
-        captions=["Detailed profile & AI insights", "Head-to-head stats & visualization"]
+        "Select Module",
+        ["Single Analysis", "Comparative Telemetry", "Doppelgänger Engine"],
+        label_visibility="collapsed"
     )
+
     st.markdown("---")
-    st.info("💡 **Tip:** Comparison mode activates the Telemetry Wall.")
 
-# --- HEADER ---
-col_h1, col_h2 = st.columns([4, 1])
-with col_h1:
-    st.title("F1 Performance Analyst")
-    st.caption("GenAI Powered Telemetry & Strategy Insights")
-with col_h2:
-    st.markdown("<div style='text-align:right; font-size:3rem;'>🏁</div>", unsafe_allow_html=True)
+    # Status Indicators
+    c_status_color = "#52E252" if vector_status == "ONLINE" else "#D0102E"
+    e_status_color = "#52E252" if explain_status == "ONLINE" else "#D0102E"
 
-st.write("")  # Spacer
+    st.markdown(f"""
+    <div style='background:#111; padding:15px; border-radius:5px; font-size:0.8rem; color:#666;'>
+        <strong>SYSTEM STATUS:</strong><br>
+        • LLM Engine: <span style='color:{e_status_color}'>{explain_status}</span><br>
+        • Vector Core: <span style='color:{c_status_color}'>{vector_status}</span><br>
+        • UI: <span style='color:#52E252'>OPTIMIZED</span>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ==========================================
-# MODE 1: SINGLE DRIVER ANALYSIS
-# ==========================================
-if mode == "Single Driver Analysis":
-    st.subheader("🔍 Driver Deep Dive")
-
-    c1, c2 = st.columns([1, 2])
-
-    with c1:
-        st.markdown("##### Driver Selection")
+# --- MODE 1: SINGLE ANALYSIS ---
+if mode == "Single Analysis":
+    c_left, c_right = st.columns([1, 2])
+    with c_left:
+        st.markdown("### 01. TARGET DRIVER")
         driver = st.selectbox("Select Driver", DRIVER_NAMES, label_visibility="collapsed")
+        d_stats = next((d for d in DRIVER_DATA if d["surname"] == driver), {})
+        if d_stats: st.markdown(render_digital_badge(driver, d_stats), unsafe_allow_html=True)
 
-        # Display mini stats if available
-        d_stats = next((d for d in DRIVER_DATA if d["surname"] == driver), None)
-        if d_stats:
+    with c_right:
+        st.markdown("### 02. INQUIRY PROTOCOL")
+        question = st.selectbox("Select Parameter", [
+            "Is this driver winning because of skill or car advantage?",
+            "How consistent is this driver under race pressure?",
+            "Would this driver still perform well in a weaker car?",
+            "What kind of driver profile does this data suggest?"
+        ], label_visibility="collapsed")
+        st.write("")
+        if st.button("INITIATE ANALYSIS"):
+            with st.spinner("PROCESSING TELEMETRY STREAM..."):
+                result = explain_driver(driver, question)
+                st.markdown(
+                    f"""<div class="terminal-box"><div class="terminal-header">>> OUTPUT STREAM // {driver.upper()}</div>{result}</div>""",
+                    unsafe_allow_html=True)
+
+# --- MODE 2: COMPARATIVE TELEMETRY ---
+elif mode == "Comparative Telemetry":
+    st.markdown("### ⚔️ DRIVER MATCHUP")
+    col_a, col_mid, col_b = st.columns([1, 0.1, 1])
+    with col_a:
+        d_a = st.selectbox("Driver A", DRIVER_NAMES, index=0)
+        stats_a = next((d for d in DRIVER_DATA if d["surname"] == d_a), {})
+        if stats_a: st.markdown(render_digital_badge(d_a, stats_a), unsafe_allow_html=True)
+    with col_mid:
+        st.markdown("<div style='text-align:center; padding-top:50px; color:#555;'>VS</div>", unsafe_allow_html=True)
+    with col_b:
+        d_b = st.selectbox("Driver B", DRIVER_NAMES, index=1)
+        stats_b = next((d for d in DRIVER_DATA if d["surname"] == d_b), {})
+        if stats_b: st.markdown(render_digital_badge(d_b, stats_b), unsafe_allow_html=True)
+
+    if stats_a and stats_b:
+        st.markdown("### 📊 TELEMETRY VISUALIZATION")
+        chart_col, text_col = st.columns([2, 1])
+        with chart_col:
+            st.plotly_chart(create_neon_radar(d_a, d_b, stats_a, stats_b), use_container_width=True,
+                            config={'displayModeBar': False})
+        with text_col:
+            st.markdown(
+                """<div style='margin-top:20px; font-size:0.9rem; color:#888;'><strong>LEGEND:</strong><br><span style='color:#FF1801'>■</span> DRIVER A<br><span style='color:#00F0FF'>■</span> DRIVER B</div>""",
+                unsafe_allow_html=True)
+            st.write("")
+            if st.button("RUN SIMULATION"):
+                with st.spinner("CALCULATING DELTAS..."):
+                    res = compare_drivers(d_a, d_b)
+                    st.markdown(
+                        f"""<div class="terminal-box"><div class="terminal-header">>> SIMULATION RESULT</div>{res}</div>""",
+                        unsafe_allow_html=True)
+
+# --- MODE 3: DOPPELGÄNGER ENGINE (NEW) ---
+elif mode == "Doppelgänger Engine":
+    st.markdown("### 🧬 HISTORICAL MATCHING ENGINE")
+    st.markdown("""
+    <div style='color:#888; font-size:0.9rem; margin-bottom:20px;'>
+        // ALGORITHM: Cosine Similarity Vector Scan<br>
+        // INPUTS: Average Finish, Consistency, Team Delta, Experience<br>
+        // GOAL: Identify statistical performance twins across eras.
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_search, col_result = st.columns([1, 2])
+
+    with col_search:
+        target_twin = st.selectbox("Find match for:", DRIVER_NAMES, key="t2_driver")
+        st.write("")
+        if st.button("SCAN DATABASE"):
+            # Call find_similar_driver from f1_chat.py
+            matches = get_similar_drivers(target_twin, DRIVER_DATA)
+
+            if matches:
+                st.session_state['matches'] = matches
+                st.session_state['vector_target'] = target_twin
+
+                # Call explain_similarity from f1_explain.py
+                with st.spinner("CORRELATING STYLES..."):
+                    st.session_state['vector_exp'] = explain_similarity_multi(target_twin, matches)
+            else:
+                st.error("No statistical match found.")
+
+    with col_result:
+        if 'matches' in st.session_state:
+            matches = st.session_state['matches']
+
+            # Display Top 3 Cards
+            cols = st.columns(3)
+            for i, col in enumerate(cols):
+                if i < len(matches):
+                    m = matches[i]
+                    pct = int(m['similarity_score'] * 100)
+                    with col:
+                        st.markdown(f"""
+                        <div class='match-card'>
+                            <div style='font-size:0.8rem; color:#888;'>MATCH #{i + 1}</div>
+                            <h2 style='color:white; margin:5px 0;'>{m['surname']}</h2>
+                            <div style='color:#3b82f6; font-family:Orbitron; font-size:1.5rem;'>{pct}%</div>
+                            <div style='font-size:0.7rem; color:#666;'>SIMILARITY</div>
+                        </div>""", unsafe_allow_html=True)
+
+            # AI Analysis Box
             st.markdown(f"""
-            <div style="margin-top: 10px;">
-                <div class="metric-box">
-                    <div class="metric-label">Races</div>
-                    <div class="metric-value">{d_stats.get('races', 'N/A')}</div>
-                </div>
-                <div class="metric-box" style="margin-top:5px;">
-                    <div class="metric-label">Team</div>
-                    <div class="metric-value" style="font-size:1rem;">{d_stats.get('team_name', 'N/A')}</div>
-                </div>
+            <div class="terminal-box" style="margin-top:20px; border-left-color: #3b82f6;">
+                <div class="terminal-header">>> AI CORRELATION ANALYSIS</div>
+                <p style="color:#ccc;">{st.session_state.get('vector_exp', 'Processing...')}</p>
             </div>
             """, unsafe_allow_html=True)
-
-    with c2:
-        st.markdown("##### Inquiry")
-        question = st.selectbox(
-            "Select Analysis Question",
-            [
-                "Is this driver winning because of skill or car advantage?",
-                "How consistent is this driver under race pressure?",
-                "Would this driver still perform well in a weaker car?",
-                "What kind of driver profile does this data suggest?"
-            ],
-            label_visibility="collapsed"
-        )
-
-        st.write("")
-        if st.button("Initialize Analysis ➜", use_container_width=True):
-            with st.spinner("Processing Telemetry..."):
-                try:
-                    result = explain_driver(driver, question)
-                    st.markdown(f"""
-                    <div class="result-card">
-                        <h4 style="color:#FF1801; margin-top:0;">AI Analysis Output</h4>
-                        <div class="result-text">{result}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"Analysis failed: {e}")
-
-# ==========================================
-# MODE 2: DRIVER COMPARISON (WITH TELEMETRY WALL)
-# ==========================================
-elif mode == "Driver Comparison":
-    st.subheader("⚔️ Head-to-Head Telemetry")
-
-    # Selection Row
-    c_a, c_mid, c_b = st.columns([1, 0.2, 1])
-    with c_a:
-        driver_a = st.selectbox("Driver A", DRIVER_NAMES, key="da")
-    with c_mid:
-        st.markdown("<h2 style='text-align:center; color:#FF1801;'>VS</h2>", unsafe_allow_html=True)
-    with c_b:
-        driver_b = st.selectbox("Driver B", DRIVER_NAMES, key="db")
-
-    # The Telemetry Wall (Visuals)
-    st.markdown("### 📊 The Telemetry Wall")
-
-    # Fetch Data
-    d_a_stats = next((d for d in DRIVER_DATA if d["surname"] == driver_a), None)
-    d_b_stats = next((d for d in DRIVER_DATA if d["surname"] == driver_b), None)
-
-    if d_a_stats and d_b_stats:
-        # Create columns: Left for text stats, Right for Radar Chart
-        chart_col1, chart_col2 = st.columns([1, 2])
-
-        with chart_col1:
-            st.markdown(f"**{driver_a}**")
-            st.progress(min(100, int((22 - d_a_stats.get('avg_finish', 20)) / 22 * 100)))
-            st.caption(f"Avg Finish: {d_a_stats.get('avg_finish', 0):.1f}")
-
-            st.markdown(f"**{driver_b}**")
-            st.progress(min(100, int((22 - d_b_stats.get('avg_finish', 20)) / 22 * 100)))
-            st.caption(f"Avg Finish: {d_b_stats.get('avg_finish', 0):.1f}")
-
-            st.info("Charts normalized for visualization (Outer edge = Better performance)")
-
-        with chart_col2:
-            fig = create_radar_chart(d_a_stats, d_b_stats)
-            st.plotly_chart(fig, use_container_width=True)
-
-    else:
-        st.warning("Insufficient data to generate charts.")
-
-    # AI Analysis Button
-    st.markdown("### 🧠 AI Comparative Analysis")
-    if st.button("Run Simulation & Analysis ➜", use_container_width=True):
-        with st.spinner("Calculating performance deltas..."):
-            try:
-                result = compare_drivers(driver_a, driver_b)
-                st.markdown(f"""
-                <div class="result-card">
-                    <h4 style="color:#FF1801; margin-top:0;">Tactical Breakdown</h4>
-                    <div class="result-text">{result}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Comparison failed: {e}")
-
-# --- FOOTER ---
-st.markdown("""
-<div class="footer">
-    F1 Performance Analyst | Not affiliated with Formula 1 | Data driven by Groq & Llama 3
-</div>
-""", unsafe_allow_html=True)
