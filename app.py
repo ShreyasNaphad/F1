@@ -3,6 +3,7 @@ import json
 import plotly.graph_objects as go
 import pandas as pd
 import base64
+import os
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(
@@ -22,15 +23,91 @@ except ImportError:
     st.error("CRITICAL: Backend modules missing.")
     st.stop()
 
-# --- 3. LOAD DATA ---
+
+# --- 3. LOAD DATA (CSV - AUTHORITATIVE SOURCE FOR NAMES & CHARTS) ---
+@st.cache_data
+def load_race_data():
+    """
+    Loads raw CSV data and creates a 'full_name' column to distinguish drivers like Schumacher.
+    """
+    base_dir = os.getcwd()
+    data_dir = os.path.join(base_dir, "data")
+
+    # Check if main file exists
+    if not os.path.exists(os.path.join(data_dir, "results.csv")):
+        return None
+
+    try:
+        # Load CSVs
+        df_res = pd.read_csv(os.path.join(data_dir, "results.csv"))
+        df_drv = pd.read_csv(os.path.join(data_dir, "drivers.csv"))
+        df_race = pd.read_csv(os.path.join(data_dir, "races.csv"))
+
+        # Merge to get Names and Dates
+        # We grab 'forename' here to fix the Schumacher issue
+        merged = pd.merge(df_res, df_drv[['driverId', 'forename', 'surname']], on='driverId', how='left')
+        merged = pd.merge(merged, df_race[['raceId', 'year', 'date', 'name']], on='raceId', how='left')
+
+        # Create Unique Identifier: Full Name
+        merged['full_name'] = merged['forename'] + " " + merged['surname']
+
+        # Convert date
+        merged['date'] = pd.to_datetime(merged['date'])
+
+        return merged.sort_values(by='date')
+    except Exception as e:
+        # Silently fail or log if needed, return None so app continues
+        return None
+
+
+# Load CSV Data first (it's our source of truth for names)
+RACE_DATA_CACHE = load_race_data()
+
+# --- 4. LOAD JSON (STATISTICAL KNOWLEDGE BASE) ---
 try:
     with open("driver_knowledge.json", "r") as f:
         DRIVER_DATA = json.load(f)
-    DRIVER_NAMES = sorted(list({d["surname"] for d in DRIVER_DATA}))
 except:
-    DRIVER_NAMES = ["Verstappen", "Hamilton", "Alonso"]
+    DRIVER_DATA = []
 
-def get_img_as_base64(file_path):
+# --- 5. BUILD DRIVER LIST ---
+# We use the CSV 'full_name' list if available because it distinguishes Michael vs Mick
+# --- 5. BUILD DRIVER LIST (SMART FILTER) ---
+# Goal: Use Full Names from CSV (to fix Schumacher), but ONLY if they exist in JSON.
+
+if RACE_DATA_CACHE is not None and DRIVER_DATA:
+    # 1. Get a set of all valid surnames from your JSON file
+    valid_json_surnames = {d["surname"].lower() for d in DRIVER_DATA}
+
+    # 2. Get all Full Names from the CSV
+    all_csv_names = sorted(RACE_DATA_CACHE['full_name'].unique())
+
+    # 3. Filter: Only keep a Full Name if its surname exists in your JSON
+    # Example: "Michael Schumacher" -> surname "Schumacher" -> Found in JSON? -> Keep.
+    # Example: "Random Driver" -> surname "Driver" -> Not in JSON? -> Drop.
+    DRIVER_LIST = []
+    for full_name in all_csv_names:
+        surname_part = full_name.split()[-1].lower()
+        if surname_part in valid_json_surnames:
+            DRIVER_LIST.append(full_name)
+
+else:
+    # Fallback: If CSV fails, just use the surnames from JSON
+    DRIVER_LIST = sorted(list({d["surname"] for d in DRIVER_DATA}))
+
+
+def get_json_stats(full_name):
+    """Finds the JSON profile matching the Full Name's surname."""
+    if not full_name: return {}
+    surname = full_name.split()[-1].lower()
+
+    # Find the matching dictionary in the JSON list
+    for d in DRIVER_DATA:
+        if d["surname"].lower() == surname:
+            return d
+    return {}
+
+def get_base64_of_bin_file(file_path):
     try:
         with open(file_path, "rb") as f:
             data = f.read()
@@ -39,121 +116,103 @@ def get_img_as_base64(file_path):
         return None
 
 
-import base64
-
-
-# --- HELPER TO LOAD IMAGE ---
-def get_img_as_base64(file_path):
-    try:
-        with open(file_path, "rb") as f:
-            data = f.read()
-        return base64.b64encode(data).decode()
-    except Exception:
-        return None
-
-
-# --- 5. VISUAL ENGINE (CSS) ---
-# --- 5. VISUAL ENGINE (CSS) ---
 def inject_custom_css():
-    # Load images (keep your existing logic)
-    main_bg_b64 = get_img_as_base64("background.png")
-    sidebar_bg_b64 = get_img_as_base64("sidebar_bg.png")
-
-    # Define Sidebar Background
-    if sidebar_bg_b64:
-        sidebar_style = f"""
-            background-image: linear-gradient(to bottom, rgba(0,0,0,0.95), rgba(10,10,10,0.95)), 
-                              url("data:image/jpeg;base64,{sidebar_bg_b64}");
-            background-size: cover;
-        """
-    else:
-        sidebar_style = "background: #09090b;"
-
-    st.markdown(f"""
+    # --- VISUAL ENGINE (CSS) ---
+    st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap');
 
-        /* --- GLOBAL & MAIN BACKGROUND --- */
-        .stApp {{
-            background-color: #0e0e0e;
-            color: #E0E0E0;
-            font-family: 'Rajdhani', sans-serif;
-        }}
+        /* --- 1. BACKGROUND FIX (GRADIENT THEME) --- */
+        [data-testid="stAppViewContainer"] {
+            background: linear-gradient(135deg, #0a0a0e 0%, #061D42 60%, #004e92 100%) !important;
+            background-size: cover;
+            background-attachment: fixed;
+        }
 
-        /* --- SIDEBAR CONTAINER --- */
-        section[data-testid="stSidebar"] {{
-            {sidebar_style}
-            border-right: 1px solid #333;
-        }}
+        /* Make the default background transparent so the gradient shows through */
+        .stApp {
+            background: transparent !important;
+        }
 
-        /* Remove default top padding in sidebar */
-        section[data-testid="stSidebar"] .block-container {{
-            padding-top: 2rem;
-        }}
+        /* --- 2. HIDE STREAMLIT HEADER --- */
+        [data-testid="stHeader"] {
+            background-color: rgba(0,0,0,0) !important;
+        }
 
-        /* --- STYLED RADIO BUTTONS (THE MENU) --- */
-        /* 1. Hide the default circle radio button */
-        div[role="radiogroup"] > label > div:first-child {{
+        [data-testid="stDecoration"] {
+            display: none;
+        }
+
+        /* --- 3. SIDEBAR --- */
+        section[data-testid="stSidebar"] {
+            background: rgba(0, 0, 0, 0.6) !important; /* Semi-transparent black */
+            backdrop-filter: blur(15px); /* Strong glass blur */
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* --- 4. RADIO BUTTONS (MENU) --- */
+        div[role="radiogroup"] > label > div:first-child {
             display: none !important;
-        }}
+        }
 
-        /* 2. Style the label container to look like a button */
-        div[role="radiogroup"] label {{
-            background: rgba(255, 255, 255, 0.03);
+        div[role="radiogroup"] label {
+            background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-left: 3px solid #333;
             padding: 12px 15px !important;
             margin-bottom: 8px !important;
-            border-radius: 0px 10px 10px 0px; /* Chamfered edge look */
+            border-radius: 0px 10px 10px 0px; 
             transition: all 0.3s ease;
             font-family: 'Orbitron', sans-serif;
             font-size: 0.9rem;
             cursor: pointer;
             display: flex;
-        }}
+            color: #ccc;
+        }
 
-        /* 3. HOVER STATE */
-        div[role="radiogroup"] label:hover {{
-            background: rgba(255, 255, 255, 0.1);
-            border-left: 3px solid #00F0FF; /* Cyan glow on hover */
+        div[role="radiogroup"] label:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-left: 3px solid #00F0FF; 
             transform: translateX(5px);
-        }}
+            color: white;
+        }
 
-        /* 4. ACTIVE/SELECTED STATE */
-        div[role="radiogroup"] label[data-checked="true"] {{
-            background: linear-gradient(90deg, rgba(255, 24, 1, 0.8) 0%, rgba(0,0,0,0) 100%);
+        div[role="radiogroup"] label[data-checked="true"] {
+            background: linear-gradient(90deg, rgba(255, 24, 1, 0.6) 0%, rgba(0,0,0,0) 100%);
             border: 1px solid #FF1801;
-            border-left: 5px solid #FFFFFF; /* White heavy bar */
+            border-left: 5px solid #FFFFFF; 
             color: white !important;
-            box-shadow: 0 0 15px rgba(255, 24, 1, 0.3);
-        }}
+            box-shadow: 0 0 20px rgba(255, 24, 1, 0.4);
+        }
 
-        /* 5. TEXT INSIDE MENU */
-        div[role="radiogroup"] label p {{
+        div[role="radiogroup"] label p {
             font-weight: 600;
             letter-spacing: 1px;
             margin: 0;
-            color: #ccc;
-        }}
-        div[role="radiogroup"] label[data-checked="true"] p {{
-            color: #fff;
-        }}
+            color: inherit;
+        }
 
-        /* --- HEADERS --- */
-        h1, h2, h3 {{ font-family: 'Orbitron', sans-serif; text-transform: uppercase; }}
+        /* --- 5. TEXT & CARDS --- */
+        h1, h2, h3 { 
+            font-family: 'Orbitron', sans-serif; 
+            text-transform: uppercase; 
+            color: white;
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.5); /* Neon Glow on headers */
+        }
 
-        /* --- GLASSMOPHISM CARDS --- */
-        .glass-card {{
-            background: rgba(20, 20, 25, 0.7);
-            backdrop-filter: blur(10px);
+        .glass-card {
+            background: rgba(20, 20, 25, 0.6);
+            backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
             padding: 20px;
             border-radius: 8px;
             margin-bottom: 15px;
-        }}
+        }
 
     </style>
     """, unsafe_allow_html=True)
+
 
 inject_custom_css()
 
@@ -232,6 +291,132 @@ def render_radar_chart(driver_a, driver_b, data_a, data_b):
     )
     return fig
 
+
+def render_momentum_chart(full_name):
+    """
+    Renders the Momentum Area Chart using CSV data.
+    Uses FULL NAME to filter, solving the Schumacher Collision.
+    """
+    # Check if data loaded correctly
+    if RACE_DATA_CACHE is None:
+        st.warning("⚠️ CSV Data not found in 'data/' folder. Cannot show momentum.")
+        return
+
+    # STRICT FILTERING by Full Name
+    # This prevents Michael's races appearing for Mick
+    driver_df = RACE_DATA_CACHE[RACE_DATA_CACHE['full_name'] == full_name].copy()
+
+    # Check if we have data
+    if driver_df.empty:
+        st.info(f"No recent race history found for {full_name}.")
+        return
+
+    # Get last 10 races (most recent)
+    driver_df = driver_df.sort_values(by='date', ascending=False).head(10)
+
+    # Sort back to ascending for the timeline plot
+    driver_df = driver_df.sort_values(by='date', ascending=True)
+
+    # Create Plotly Chart
+    fig = go.Figure()
+
+    # Add the Neon Line
+    fig.add_trace(go.Scatter(
+        x=driver_df['year'].astype(str) + " " + driver_df['name'],  # Label: "2023 Monaco"
+        y=driver_df['positionOrder'],
+        mode='lines+markers',
+        line=dict(color='#00F0FF', width=3, shape='spline'),  # Cyan Spline
+        marker=dict(size=6, color='black', line=dict(width=2, color='#00F0FF')),
+        fill='tozeroy',  # Fill area below
+        fillcolor='rgba(0, 240, 255, 0.1)'  # Transparent Cyan Glow
+    ))
+
+    # Style the Graph
+    fig.update_layout(
+        title=dict(text=f">> RECENT MOMENTUM: {full_name.upper()}",
+                   font=dict(color="#666", size=10, family="Orbitron")),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        height=180,
+        margin=dict(t=30, b=10, l=10, r=10),
+        yaxis=dict(autorange="reversed", showgrid=True, gridcolor='rgba(255,255,255,0.05)', zeroline=False),
+        # Invert Y so P1 is top
+        xaxis=dict(showgrid=False, showticklabels=False)  # Hide X labels to keep it clean
+    )
+
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+
+def render_legacy_chart(full_name_a, full_name_b):
+    """
+    Renders a Cumulative Points 'Race' between two drivers over their careers.
+    """
+    if RACE_DATA_CACHE is None:
+        return
+
+    # Filter for both drivers
+    df = RACE_DATA_CACHE[RACE_DATA_CACHE['full_name'].isin([full_name_a, full_name_b])].copy()
+
+    if df.empty:
+        st.info("Insufficient data for comparison chart.")
+        return
+
+    # Sort by date to ensure the line goes forward in time
+    df = df.sort_values(by='date')
+
+    # Create the figure
+    fig = go.Figure()
+
+    # Define styles for A and B
+    drivers = [full_name_a, full_name_b]
+    colors = ['#FF1801', '#00F0FF']  # Red vs Cyan
+
+    for i, driver in enumerate(drivers):
+        # Filter driver specific data
+        d_data = df[df['full_name'] == driver].copy()
+
+        # Calculate Cumulative Points
+        d_data['cumulative_points'] = d_data['points'].cumsum()
+
+        # Add Trace
+        fig.add_trace(go.Scatter(
+            x=d_data['date'],
+            y=d_data['cumulative_points'],
+            mode='lines',
+            name=driver.split()[-1].upper(),  # Show Surname in legend
+            line=dict(color=colors[i], width=4),
+            fill='tozeroy',  # Fill to bottom for "Mountain" effect
+            fillcolor=f"rgba({int(colors[i][1:3], 16)}, {int(colors[i][3:5], 16)}, {int(colors[i][5:7], 16)}, 0.1)"
+        ))
+
+    # Cyberpunk Styling
+    fig.update_layout(
+        title=dict(text=">> LEGACY TRAJECTORY (CUMULATIVE POINTS)",
+                   font=dict(color="#888", family="Orbitron", size=12)),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        height=300,
+        margin=dict(t=40, b=20, l=20, r=20),
+        xaxis=dict(
+            showgrid=False,
+            gridcolor='rgba(255,255,255,0.1)',
+            tickfont=dict(color='#666')
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(255,255,255,0.05)',
+            tickfont=dict(color='#666'),
+            title="TOTAL POINTS"
+        ),
+        legend=dict(
+            orientation="h",
+            y=1.1,
+            font=dict(color="white")
+        ),
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
 # --- 6. HEADER ---
 c1, c2 = st.columns([3, 1])
@@ -332,13 +517,28 @@ elif "RACE REWIND" in mode:
 # =========================================================
 # MODULE 1: SINGLE ANALYSIS
 # =========================================================
+# =========================================================
+# MODULE 1: SINGLE ANALYSIS
+# =========================================================
 if mode == "Single Analysis":
     c_left, c_right = st.columns([1, 2])
     with c_left:
         st.markdown("##### SELECT DRIVER")
-        driver = st.selectbox("Driver", DRIVER_NAMES, label_visibility="collapsed")
-        d_stats = next((d for d in DRIVER_DATA if d["surname"] == driver), {})
-        if d_stats: render_driver_badge(driver, d_stats)
+
+        # 1. Dropdown (Now contains 'Michael Schumacher', 'Mick Schumacher', etc.)
+        # but ONLY if they are in your JSON.
+        sel_full_name = st.selectbox("Driver", DRIVER_LIST, label_visibility="collapsed")
+
+        # 2. Get Stats (Finds the 'Schumacher' JSON entry for either Michael or Mick)
+        d_stats = get_json_stats(sel_full_name)
+
+        # 3. Render Badge (If stats found)
+        if d_stats:
+            render_driver_badge(sel_full_name, d_stats)
+
+        # 4. Render Momentum Chart (Uses Full Name to show ONLY that person's races)
+        st.markdown("<br>", unsafe_allow_html=True)
+        render_momentum_chart(sel_full_name)
 
     with c_right:
         st.markdown("##### INQUIRY PROTOCOL")
@@ -351,8 +551,11 @@ if mode == "Single Analysis":
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("INITIALIZE AI ANALYSIS"):
-            with st.spinner("ESTABLISHING DATA LINK..."):
-                result = explain_driver(driver, question)
+            # Extract surname for the AI backend (which likely expects just 'Schumacher')
+            surname_extracted = sel_full_name.split()[-1]
+
+            with st.spinner(f"ANALYZING {sel_full_name.upper()}..."):
+                result = explain_driver(surname_extracted, question)
                 st.markdown(f"""
                 <div class="glass-card">
                     <div style="font-family:'Orbitron'; color:#00F0FF; margin-bottom:10px; border-bottom:1px solid #333; padding-bottom:5px;">
@@ -361,68 +564,129 @@ if mode == "Single Analysis":
                     <div style="line-height:1.6; color:#ddd;">{result}</div>
                 </div>
                 """, unsafe_allow_html=True)
-
+# =========================================================
+# MODULE 2: COMPARATIVE TELEMETRY
 # =========================================================
 # MODULE 2: COMPARATIVE TELEMETRY
 # =========================================================
 elif mode == "Comparative Telemetry":
     st.markdown("##### ⚔️ HEAD-TO-HEAD TELEMETRY")
 
-    col_a, col_mid, col_b = st.columns([1, 0.1, 1])
+    # --- 1. SELECTION ROW ---
+    col_a, col_mid, col_b = st.columns([1, 0.2, 1])
     with col_a:
-        d_a = st.selectbox("Driver A", DRIVER_NAMES, index=0)
-        s_a = next((d for d in DRIVER_DATA if d["surname"] == d_a), {})
-        if s_a: render_driver_badge(d_a, s_a)
+        d_a_full = st.selectbox("Driver A", DRIVER_LIST, index=0)
+        s_a = get_json_stats(d_a_full)
+        if s_a: render_driver_badge(d_a_full, s_a)
 
     with col_mid:
         st.markdown(
-            "<div style='text-align:center; padding-top:100px; font-size:2rem; font-family:Orbitron; color:#FF1801;'>VS</div>",
+            "<div style='text-align:center; padding-top:100px; font-size:2rem; font-family:Orbitron; color:#FF1801; text-shadow: 0 0 10px #FF1801;'>VS</div>",
             unsafe_allow_html=True)
 
     with col_b:
-        d_b = st.selectbox("Driver B", DRIVER_NAMES, index=1)
-        s_b = next((d for d in DRIVER_DATA if d["surname"] == d_b), {})
-        if s_b: render_driver_badge(d_b, s_b)
+        d_b_full = st.selectbox("Driver B", DRIVER_LIST, index=1)
+        s_b = get_json_stats(d_b_full)
+        if s_b: render_driver_badge(d_b_full, s_b)
 
     if s_a and s_b:
-        st.markdown("##### 📊 DATA VISUALIZATION")
-        c_chart, c_txt = st.columns([2, 1])
-        with c_chart:
-            st.plotly_chart(render_radar_chart(d_a, d_b, s_a, s_b), use_container_width=True,
+        # --- 2. VISUALIZATION ROW ---
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # LEFT: Radar Chart (Skill Attributes)
+        # RIGHT: New Legacy Chart (Career Points)
+        c_radar, c_legacy = st.columns([1, 1.5])
+
+        with c_radar:
+            st.markdown(
+                "<div style='text-align:center; font-family:Orbitron; color:#888; font-size:0.8rem;'>ATTRIBUTE MATRIX</div>",
+                unsafe_allow_html=True)
+            st.plotly_chart(render_radar_chart(d_a_full, d_b_full, s_a, s_b), use_container_width=True,
                             config={'displayModeBar': False})
-        with c_txt:
-            st.markdown("<br><br>", unsafe_allow_html=True)
-            if st.button("RUN SIMULATION"):
-                with st.spinner("CALCULATING DELTAS..."):
-                    res = compare_drivers(d_a, d_b)
-                    st.markdown(f"""
-                    <div class="terminal-output">
+
+        with c_legacy:
+            # RENDER THE NEW CHART HERE
+            render_legacy_chart(d_a_full, d_b_full)
+
+        # --- 3. AI ANALYSIS ROW (FIXED UI) ---
+        st.markdown("<br>", unsafe_allow_html=True)
+        center_btn = st.columns([1, 2, 1])
+        with center_btn[1]:
+            run_sim = st.button("RUN TACTICAL SIMULATION", use_container_width=True)
+
+        if run_sim:
+            with st.spinner("CALCULATING DELTAS..."):
+                # Extract surnames for comparison logic
+                sur_a = d_a_full.split()[-1]
+                sur_b = d_b_full.split()[-1]
+
+                res = compare_drivers(sur_a, sur_b)
+
+                # --- FIXED: UI CONTAINER FOR TEXT ---
+                st.markdown(f"""
+                <div class="glass-card" style="border-top: 3px solid #00F0FF;">
+                    <div style="font-family:'Orbitron'; color:#00F0FF; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px; display:flex; justify-content:space-between;">
+                        <span>>> SIMULATION REPORT</span>
+                        <span style="font-size:0.8rem; color:#666;">ID: {sur_a[:3].upper()}vs{sur_b[:3].upper()}_LOG</span>
+                    </div>
+                    <div style="font-family:'Rajdhani'; font-size:1.1rem; line-height:1.6; color:#e0e0e0; white-space: pre-line;">
                         {res}
                     </div>
-                    """, unsafe_allow_html=True)
+                </div>
+                """, unsafe_allow_html=True)
 
 # =========================================================
 # MODULE 3: DOPPELGÄNGER ENGINE
 # =========================================================
+# =========================================================
+# MODULE 3: DOPPELGÄNGER ENGINE
+# =========================================================
 elif mode == "Doppelgänger Engine":
-    st.markdown("##### 🧬 STATISTICAL TWIN IDENTIFICATION")
+    st.markdown("""
+        <div class="f1-container" style="border-left: 4px solid #FF1801; padding: 20px; background: #0a0a0a;">
+            <div class="telemetry-header" style="display:flex; align-items:center; gap:15px; border-bottom: 1px solid #333; padding-bottom: 10px;">
+                <div style="font-family:'Orbitron'; color:#FF1801; letter-spacing:2px; font-size:1.2rem;">🧬 DOPPELGÄNGER ENGINE <span class="status-badge" style="background:#FF1801; color:white; padding:2px 8px; font-size:0.6rem; border-radius:2px; margin-left:10px;">LIVE_DATA</span></div>
+                <div style="flex-grow:1;"></div>
+                <div style="font-family:'Orbitron'; font-size:0.7rem; color:#666;">SYS_VER: 3.2.0.F1</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
-    c_search, c_res = st.columns([1, 2])
+    c_search, c_res = st.columns([1.2, 2.5])
+
     with c_search:
-        st.markdown("Select a driver to find their historical statistical twin.")
-        target_twin = st.selectbox("Target Driver", DRIVER_NAMES)
+        st.markdown(
+            "<div style='color: #888; font-family: \"Orbitron\"; font-size: 0.7rem; margin-bottom:10px;'>>> INPUT TARGET PARAMETERS</div>",
+            unsafe_allow_html=True)
+        target_twin = st.selectbox("Target Driver", DRIVER_LIST, label_visibility="collapsed")
+
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("SCAN DATABASE"):
-            matches = get_similar_drivers(target_twin, DRIVER_DATA)
-            if matches:
-                st.session_state['matches'] = matches
-                with st.spinner("ANALYZING CORRELATIONS..."):
-                    st.session_state['vec_exp'] = explain_similarity_multi(target_twin, matches)
-            else:
-                st.error("No matches found.")
+
+        if st.button("▶ INITIALIZE SCAN SEQUENCE", use_container_width=True, type="primary"):
+            with st.spinner("SYNCING TELEMETRY..."):
+                target_surname = target_twin.split()[-1]
+                matches = get_similar_drivers(target_surname, DRIVER_DATA)
+                if matches:
+                    st.session_state['matches'] = matches
+                    st.session_state['vec_exp'] = explain_similarity_multi(target_surname, matches)
+                    st.rerun()
+                else:
+                    st.error("MATCH_FAILURE: No historical correlates found in registry.")
 
     with c_res:
-        if 'matches' in st.session_state:
+        if 'matches' not in st.session_state:
+            st.markdown(f"""
+            <div style="height: 300px; border: 1px dashed #333; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); border-radius: 8px; position:relative; overflow:hidden;">
+                <div class="scanning-line" style="height: 2px; background: linear-gradient(90deg, transparent, #00f0ff, transparent); width: 100%; position: absolute; animation: scan 2s linear infinite;"></div>
+                <div style="font-family: 'Orbitron'; color: #444; font-size: 0.8rem; margin-top: 20px;">
+                    AWAITING INPUT_STREAM...
+                </div>
+            </div>
+            <style>
+                @keyframes scan {{ 0% {{ top: 0px; opacity: 0; }} 50% {{ opacity: 1; }} 100% {{ top: 300px; opacity: 0; }} }}
+            </style>
+            """, unsafe_allow_html=True)
+        else:
             matches = st.session_state['matches']
             cols = st.columns(3)
             for i, col in enumerate(cols):
@@ -431,20 +695,31 @@ elif mode == "Doppelgänger Engine":
                     pct = int(m['similarity_score'] * 100)
                     with col:
                         st.markdown(f"""
-                        <div class="match-card">
-                            <div style="font-size:0.7rem; color:#888;">MATCH #{i + 1}</div>
-                            <div style="font-size:1.2rem; font-weight:bold; color:white; margin:5px 0;">{m['surname']}</div>
-                            <div style="font-size:2rem; font-family:'Orbitron'; color:#00F0FF;">{pct}%</div>
-                            <div style="font-size:0.6rem; color:#555;">CONFIDENCE</div>
+                        <div class="match-card" style="background: linear-gradient(145deg, #1a1a1a, #0d0d0d); border: 1px solid #333; border-left: 4px solid #00f0ff; padding: 15px; border-radius: 4px; position:relative;">
+                            <div style="font-size:0.6rem; color:#888; font-family:'Orbitron';">IDENTIFIED_TWIN_{i + 1}</div>
+                            <div style="font-size:1.4rem; font-weight:bold; color:white; font-family:'Orbitron'; margin: 5px 0;">{m['surname'].upper()}</div>
+                            <div style="font-family:'Orbitron'; color:#00f0ff; font-size:1.8rem;">{pct}%</div>
+                            <div style="font-size:0.6rem; color:#555; letter-spacing:1px; font-family:'Rajdhani';">CORRELATION_RANK</div>
                         </div>
                         """, unsafe_allow_html=True)
 
-            st.markdown(f"""
-            <div class="glass-card" style="margin-top:20px;">
-                <div style="color:#00F0FF; font-family:'Orbitron'; font-size:0.9rem; margin-bottom:10px;">>> AI CORRELATION ANALYSIS</div>
-                <div style="color:#ccc;">{st.session_state.get('vec_exp', '...')}</div>
+    if 'matches' in st.session_state:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="glass-card" style="background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); padding: 20px; border-radius: 8px;">
+            <div style="color:#00F0FF; font-family:'Orbitron'; font-size:0.9rem; margin-bottom:12px; display: flex; align-items: center; gap: 10px;">
+                <span style="display:inline-block; width: 10px; height: 10px; background: #00f0ff;"></span>
+                AI TACTICAL ANALYSIS
             </div>
-            """, unsafe_allow_html=True)
+            <div style="color:#bbb; line-height: 1.6; font-size: 1rem; font-family: 'Rajdhani', sans-serif;">
+                {st.session_state.get('vec_exp', 'Processing neural correlations...')}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+# =========================================================
+# MODULE 4: RACE REWIND
+# =========================================================
 
 # =========================================================
 # MODULE 4: RACE REWIND
