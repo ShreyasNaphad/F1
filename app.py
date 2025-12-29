@@ -567,101 +567,157 @@ if mode == "Single Analysis":
 # =========================================================
 # MODULE 2: COMPARATIVE TELEMETRY
 # =========================================================
-# MODULE 2: COMPARATIVE TELEMETRY
+# =========================================================
+# MODULE 2: COMPARATIVE TELEMETRY (RESULT-FIRST LAYOUT)
 # =========================================================
 elif mode == "Comparative Telemetry":
     st.markdown("##### ⚔️ HEAD-TO-HEAD TELEMETRY")
 
-    # --- 1. SELECTION ROW ---
-    col_a, col_mid, col_b = st.columns([1, 0.2, 1])
+    # --- 1. SELECTION & ACTION ROW ---
+    col_a, col_mid, col_b = st.columns([1, 0.4, 1])
+
+    # -- DRIVER A --
     with col_a:
         d_a_full = st.selectbox("Driver A", DRIVER_LIST, index=0)
         s_a = get_json_stats(d_a_full)
         if s_a: render_driver_badge(d_a_full, s_a)
 
+    # -- CENTER (VS + BUTTON) --
     with col_mid:
-        st.markdown(
-            "<div style='text-align:center; padding-top:100px; font-size:2rem; font-family:Orbitron; color:#FF1801; text-shadow: 0 0 10px #FF1801;'>VS</div>",
-            unsafe_allow_html=True)
+        st.markdown("""
+        <div style="height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding-top: 40px;">
+            <div style='font-family:Orbitron; font-size:1.5rem; color:#FF1801; text-shadow: 0 0 15px #FF1801; margin-bottom: 10px;'>VS</div>
+        </div>
+        """, unsafe_allow_html=True)
 
+        # Primary Action Button
+        run_sim = st.button("⚡ SIMULATE", use_container_width=True, type="primary")
+
+    # -- DRIVER B --
     with col_b:
         d_b_full = st.selectbox("Driver B", DRIVER_LIST, index=1)
         s_b = get_json_stats(d_b_full)
         if s_b: render_driver_badge(d_b_full, s_b)
 
+    # --- 2. LOGIC PROCESSING ---
     if s_a and s_b:
-        # --- 2. VISUALIZATION ROW ---
-        st.markdown("<br>", unsafe_allow_html=True)
+        # If button clicked, store result in session state
+        if run_sim:
+            st.session_state['sim_result'] = compare_drivers(d_a_full.split()[-1], d_b_full.split()[-1])
+            st.session_state['sim_drivers'] = (d_a_full, d_b_full)
 
-        # LEFT: Radar Chart (Skill Attributes)
-        # RIGHT: New Legacy Chart (Career Points)
+        # --- 3. AI REPORT (RENDERED FIRST) ---
+        # We check if a result exists and display it HERE, right under the buttons
+        if 'sim_result' in st.session_state and st.session_state.get('sim_drivers') == (d_a_full, d_b_full):
+            res = st.session_state['sim_result']
+            sur_a = d_a_full.split()[-1]
+            sur_b = d_b_full.split()[-1]
+
+            st.markdown(f"""
+            <div class="glass-card" style="border-top: 3px solid #00F0FF; margin-top: 25px; margin-bottom: 25px; animation: slideIn 0.5s ease-out;">
+                <div style="font-family:'Orbitron'; color:#00F0FF; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px; display:flex; justify-content:space-between;">
+                    <span>>> TACTICAL SIMULATION REPORT</span>
+                    <span style="font-size:0.8rem; color:#666;">LOG_ID: {sur_a[:3].upper()}vs{sur_b[:3].upper()}</span>
+                </div>
+                <div style="font-family:'Rajdhani'; font-size:1.1rem; line-height:1.6; color:#e0e0e0; white-space: pre-line;">
+                    {res}
+                </div>
+            </div>
+            <style>
+                @keyframes slideIn {{
+                    from {{ opacity: 0; transform: translateY(-10px); }}
+                    to {{ opacity: 1; transform: translateY(0); }}
+                }}
+            </style>
+            """, unsafe_allow_html=True)
+
+        # --- 4. VISUALIZATION ROW (RENDERED SECOND) ---
+        # The graphs will naturally get pushed down when the report appears
         c_radar, c_legacy = st.columns([1, 1.5])
 
         with c_radar:
             st.markdown(
-                "<div style='text-align:center; font-family:Orbitron; color:#888; font-size:0.8rem;'>ATTRIBUTE MATRIX</div>",
+                "<div style='text-align:center; font-family:Orbitron; color:#888; font-size:0.8rem; margin-bottom:5px;'>ATTRIBUTE MATRIX</div>",
                 unsafe_allow_html=True)
             st.plotly_chart(render_radar_chart(d_a_full, d_b_full, s_a, s_b), use_container_width=True,
                             config={'displayModeBar': False})
 
         with c_legacy:
-            # RENDER THE NEW CHART HERE
             render_legacy_chart(d_a_full, d_b_full)
 
-        # --- 3. AI ANALYSIS ROW (FIXED UI) ---
-        st.markdown("<br>", unsafe_allow_html=True)
-        center_btn = st.columns([1, 2, 1])
-        with center_btn[1]:
-            run_sim = st.button("RUN TACTICAL SIMULATION", use_container_width=True)
-
-        if run_sim:
-            with st.spinner("CALCULATING DELTAS..."):
-                # Extract surnames for comparison logic
-                sur_a = d_a_full.split()[-1]
-                sur_b = d_b_full.split()[-1]
-
-                res = compare_drivers(sur_a, sur_b)
-
-                # --- FIXED: UI CONTAINER FOR TEXT ---
-                st.markdown(f"""
-                <div class="glass-card" style="border-top: 3px solid #00F0FF;">
-                    <div style="font-family:'Orbitron'; color:#00F0FF; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px; display:flex; justify-content:space-between;">
-                        <span>>> SIMULATION REPORT</span>
-                        <span style="font-size:0.8rem; color:#666;">ID: {sur_a[:3].upper()}vs{sur_b[:3].upper()}_LOG</span>
-                    </div>
-                    <div style="font-family:'Rajdhani'; font-size:1.1rem; line-height:1.6; color:#e0e0e0; white-space: pre-line;">
-                        {res}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-# =========================================================
-# MODULE 3: DOPPELGÄNGER ENGINE
 # =========================================================
 # =========================================================
 # MODULE 3: DOPPELGÄNGER ENGINE
 # =========================================================
 elif mode == "Doppelgänger Engine":
     st.markdown("""
-        <div class="f1-container" style="border-left: 4px solid #FF1801; padding: 20px; background: #0a0a0a;">
-            <div class="telemetry-header" style="display:flex; align-items:center; gap:15px; border-bottom: 1px solid #333; padding-bottom: 10px;">
-                <div style="font-family:'Orbitron'; color:#FF1801; letter-spacing:2px; font-size:1.2rem;">🧬 DOPPELGÄNGER ENGINE <span class="status-badge" style="background:#FF1801; color:white; padding:2px 8px; font-size:0.6rem; border-radius:2px; margin-left:10px;">LIVE_DATA</span></div>
-                <div style="flex-grow:1;"></div>
-                <div style="font-family:'Orbitron'; font-size:0.7rem; color:#666;">SYS_VER: 3.2.0.F1</div>
+        <style>
+            .doppel-header {
+                border-left: 4px solid #FF1801;
+                padding: 24px;
+                background: linear-gradient(90deg, #0a0a0a, #111);
+                margin-bottom: 30px;
+                border-radius: 0 8px 8px 0;
+            }
+            .hud-label {
+                color: #555;
+                font-family: "Orbitron";
+                font-size: 0.65rem;
+                letter-spacing: 2px;
+                margin-bottom: 8px;
+                display: block;
+            }
+            .section-spacer { margin-bottom: 25px; }
+            .card-grid {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 20px;
+                margin-top: 10px;
+            }
+            .scanning-container {
+                height: 320px;
+                border: 1px solid #222;
+                background: radial-gradient(circle at center, #111, #050505);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                border-radius: 8px;
+                margin-bottom: 20px;
+            }
+            .hud-bracket {
+                position: absolute;
+                width: 15px;
+                height: 15px;
+                border: 1px solid #444;
+            }
+            .top-left { top: 10px; left: 10px; border-right: none; border-bottom: none; }
+            .top-right { top: 10px; right: 10px; border-left: none; border-bottom: none; }
+            .bottom-left { bottom: 10px; left: 10px; border-right: none; border-top: none; }
+            .bottom-right { bottom: 10px; right: 10px; border-left: none; border-top: none; }
+        </style>
+
+        <div class="doppel-header">
+            <div style="display:flex; align-items:center; justify-content:space-between; border-bottom: 1px solid #222; padding-bottom: 15px;">
+                <div style="font-family:'Orbitron'; color:#FF1801; letter-spacing:3px; font-size:1.4rem;">
+                    🧬 DOPPELGÄNGER ENGINE 
+                    <span style="background:#FF1801; color:white; padding:3px 10px; font-size:0.6rem; vertical-align:middle; border-radius:2px; margin-left:15px; font-weight:bold;">LIVE_REGISTRY</span>
+                </div>
+                <div style="font-family:'Orbitron'; font-size:0.7rem; color:#444;">DATA_STREAM: STABLE // V3.2</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    c_search, c_res = st.columns([1.2, 2.5])
+    c_search, _, c_res = st.columns([1.2, 0.2, 2.5])
 
     with c_search:
-        st.markdown(
-            "<div style='color: #888; font-family: \"Orbitron\"; font-size: 0.7rem; margin-bottom:10px;'>>> INPUT TARGET PARAMETERS</div>",
-            unsafe_allow_html=True)
+        st.markdown("<span class='hud-label'>>> TARGET DRIVER</span>", unsafe_allow_html=True)
         target_twin = st.selectbox("Target Driver", DRIVER_LIST, label_visibility="collapsed")
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<div class='section-spacer'></div>", unsafe_allow_html=True)
 
+        st.markdown("<span class='hud-label'>>> SYSTEM_COMMANDS</span>", unsafe_allow_html=True)
         if st.button("▶ INITIALIZE SCAN SEQUENCE", use_container_width=True, type="primary"):
             with st.spinner("SYNCING TELEMETRY..."):
                 target_surname = target_twin.split()[-1]
@@ -671,50 +727,72 @@ elif mode == "Doppelgänger Engine":
                     st.session_state['vec_exp'] = explain_similarity_multi(target_surname, matches)
                     st.rerun()
                 else:
-                    st.error("MATCH_FAILURE: No historical correlates found in registry.")
+                    st.error("ERR: NO_MATCH_FOUND_IN_HISTORICAL_INDEX")
+
+
 
     with c_res:
         if 'matches' not in st.session_state:
             st.markdown(f"""
-            <div style="height: 300px; border: 1px dashed #333; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); border-radius: 8px; position:relative; overflow:hidden;">
-                <div class="scanning-line" style="height: 2px; background: linear-gradient(90deg, transparent, #00f0ff, transparent); width: 100%; position: absolute; animation: scan 2s linear infinite;"></div>
-                <div style="font-family: 'Orbitron'; color: #444; font-size: 0.8rem; margin-top: 20px;">
-                    AWAITING INPUT_STREAM...
+            <div class="scanning-container">
+                <div class="hud-bracket top-left"></div><div class="hud-bracket top-right"></div>
+                <div class="hud-bracket bottom-left"></div><div class="hud-bracket bottom-right"></div>
+                <div class="scanning-line" style="height: 1px; background: linear-gradient(90deg, transparent, #00f0ff, transparent); width: 100%; position: absolute; animation: scan 3s linear infinite;"></div>
+                <div style="font-family: 'Orbitron'; color: #333; font-size: 0.8rem; letter-spacing: 5px; text-align:center;">
+                    AWAITING_INPUT<br>
+                    <span style="font-size:0.6rem; color:#222;">SYSTEM_READY</span>
                 </div>
             </div>
             <style>
-                @keyframes scan {{ 0% {{ top: 0px; opacity: 0; }} 50% {{ opacity: 1; }} 100% {{ top: 300px; opacity: 0; }} }}
+                @keyframes scan {{ 
+                    0% {{ top: 5%; opacity: 0; }} 
+                    20% {{ opacity: 1; }} 
+                    80% {{ opacity: 1; }} 
+                    100% {{ top: 95%; opacity: 0; }} 
+                }}
             </style>
             """, unsafe_allow_html=True)
         else:
-            matches = st.session_state['matches']
+            st.markdown("<span class='hud-label'>>> NEURAL_MATCH_CORRELATION</span>", unsafe_allow_html=True)
             cols = st.columns(3)
+            matches = st.session_state['matches']
             for i, col in enumerate(cols):
                 if i < len(matches):
                     m = matches[i]
                     pct = int(m['similarity_score'] * 100)
                     with col:
                         st.markdown(f"""
-                        <div class="match-card" style="background: linear-gradient(145deg, #1a1a1a, #0d0d0d); border: 1px solid #333; border-left: 4px solid #00f0ff; padding: 15px; border-radius: 4px; position:relative;">
-                            <div style="font-size:0.6rem; color:#888; font-family:'Orbitron';">IDENTIFIED_TWIN_{i + 1}</div>
-                            <div style="font-size:1.4rem; font-weight:bold; color:white; font-family:'Orbitron'; margin: 5px 0;">{m['surname'].upper()}</div>
-                            <div style="font-family:'Orbitron'; color:#00f0ff; font-size:1.8rem;">{pct}%</div>
-                            <div style="font-size:0.6rem; color:#555; letter-spacing:1px; font-family:'Rajdhani';">CORRELATION_RANK</div>
+                        <div class="match-card" style="background: linear-gradient(145deg, #111, #080808); border: 1px solid #222; border-top: 3px solid #00f0ff; padding: 20px; border-radius: 4px; height: 160px; display:flex; flex-direction:column; justify-content:space-between;">
+                            <div>
+                                <div style="font-size:0.55rem; color:#555; font-family:'Orbitron';">SUBJECT_{i + 1:02d}</div>
+                                <div style="font-size:1.2rem; font-weight:bold; color:white; font-family:'Orbitron'; margin-top: 5px;">{m['surname'].upper()}</div>
+                            </div>
+                            <div>
+                                <div style="font-family:'Orbitron'; color:#00f0ff; font-size:1.8rem; line-height:1;">{pct}%</div>
+                                <div style="font-size:0.6rem; color:#444; font-family:'Rajdhani'; letter-spacing:1px; margin-top:5px;">MATCH_PROBABILITY</div>
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
 
     if 'matches' in st.session_state:
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-bottom:40px;'></div>", unsafe_allow_html=True)
         st.markdown(f"""
-        <div class="glass-card" style="background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); padding: 20px; border-radius: 8px;">
-            <div style="color:#00F0FF; font-family:'Orbitron'; font-size:0.9rem; margin-bottom:12px; display: flex; align-items: center; gap: 10px;">
-                <span style="display:inline-block; width: 10px; height: 10px; background: #00f0ff;"></span>
-                AI TACTICAL ANALYSIS
+        <div class="glass-card" style="background: rgba(20, 20, 20, 0.6); border: 1px solid #333; padding: 30px; border-radius: 8px; border-left: 5px solid #00F0FF;">
+            <div style="color:#00F0FF; font-family:'Orbitron'; font-size:1rem; margin-bottom:20px; display: flex; align-items: center; gap: 15px;">
+                <div style="width: 12px; height: 12px; border: 2px solid #00f0ff; border-radius:50%; animation: pulse 2s infinite;"></div>
+                TACTICAL MATCH
             </div>
-            <div style="color:#bbb; line-height: 1.6; font-size: 1rem; font-family: 'Rajdhani', sans-serif;">
+            <div style="color:#ccc; line-height: 1.8; font-size: 1.05rem; font-family: 'Rajdhani', sans-serif; letter-spacing: 0.5px;">
                 {st.session_state.get('vec_exp', 'Processing neural correlations...')}
             </div>
         </div>
+        <style>
+            @keyframes pulse {{ 
+                0% {{ transform: scale(1); opacity: 1; }} 
+                50% {{ transform: scale(1.5); opacity: 0.3; }} 
+                100% {{ transform: scale(1); opacity: 1; }} 
+            }}
+        </style>
         """, unsafe_allow_html=True)
 
 # =========================================================
@@ -724,39 +802,176 @@ elif mode == "Doppelgänger Engine":
 # =========================================================
 # MODULE 4: RACE REWIND
 # =========================================================
-elif mode == "Race Rewind":
-    st.markdown("##### 📖 HISTORICAL RECONSTRUCTION")
 
+# =========================================================
+# MODULE 4: RACE REWIND
+# =========================================================
+# =========================================================
+# MODULE 4: RACE REWIND (ARCHIVE UI OVERHAUL)
+# =========================================================
+elif mode == "Race Rewind":
+
+    # --- 1. HEADER ---
+    st.markdown("##### 📖 STORY MODE")
+
+    # --- 2. CONTROL PANEL UI (INPUTS) ---
+    # We wrap the inputs in a styled container to make them look like a cohesive unit
+    st.markdown("""
+    <style>
+        .control-panel {
+            background: linear-gradient(180deg, rgba(20, 20, 25, 0.9) 0%, rgba(10, 10, 15, 0.95) 100%);
+            border: 1px solid #333;
+            border-top: 3px solid #FF1801; /* Ferrari Red Accent */
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+        .panel-header {
+            font-family: 'Orbitron';
+            color: #aaa;
+            font-size: 0.8rem;
+            letter-spacing: 2px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .step-label {
+            font-family: 'Rajdhani';
+            font-weight: bold;
+            color: #FF1801;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+    </style>
+    <div class="control-panel">
+        <div class="panel-header">
+            <span>ARCHIVE QUERY PROTOCOL</span>
+            <span style="color:#FF1801;">● SECURE</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # We move the columns *up* to visually sit inside/below the header we just drew
+    # (Streamlit doesn't allow widgets inside HTML, so we stack them closely)
     years = get_years()
+
     if not years:
-        st.warning("Database unavailable.")
+        st.warning("⚠️ ARCHIVE DATABASE OFFLINE.")
     else:
+        # --- THE INPUTS ---
         c1, c2, c3 = st.columns(3)
+
         with c1:
-            sel_year = st.selectbox("1. SEASON", years)
+            st.markdown("<div class='step-label'>SELECT ERA</div>", unsafe_allow_html=True)
+            sel_year = st.selectbox("Season", years, label_visibility="collapsed")
+
         with c2:
+            st.markdown("<div class='step-label'>TARGET EVENT</div>", unsafe_allow_html=True)
             races = get_races_for_year(sel_year)
-            sel_race = st.selectbox("2. GRAND PRIX", races['name']) if not races.empty else None
-            race_id = races[races['name'] == sel_race].iloc[0]['raceId'] if sel_race else None
+            if not races.empty:
+                sel_race = st.selectbox("Grand Prix", races['name'], label_visibility="collapsed")
+                # Get Race Details
+                race_row = races[races['name'] == sel_race].iloc[0]
+                race_id = race_row['raceId']
+                race_date = race_row['date']
+            else:
+                sel_race = None
+                race_id = None
+
         with c3:
-            drivers = get_drivers_in_race(race_id) if race_id else []
-            sel_driver = st.selectbox("3. DRIVER", drivers) if drivers else None
+            st.markdown("<div class='step-label'>SELECT DRIVER</div>", unsafe_allow_html=True)
+            if race_id:
+                drivers = get_drivers_in_race(race_id)
+                sel_driver = st.selectbox("Driver", drivers, label_visibility="collapsed")
+            else:
+                sel_driver = None
+                st.selectbox("Driver", ["Wait for Race..."], disabled=True, label_visibility="collapsed")
+
+        # --- DYNAMIC "RACE TICKET" ---
+        # Show details about the selected race immediately to make it look responsive
+        if sel_race:
+            st.markdown(f"""
+            <div style="margin-top: 15px; background: rgba(255,255,255,0.05); border-left: 3px solid #fff; padding: 10px; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <div style="font-size:0.7rem; color:#888; font-family:'Orbitron';">EVENT CONFIRMED</div>
+                    <div style="font-size:1.1rem; color:white; font-weight:bold;">{str(sel_race).upper()}</div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:0.7rem; color:#888; font-family:'Orbitron';">DATE LOG</div>
+                    <div style="font-size:1.1rem; color:#FF1801; font-family:'Rajdhani';">{race_date}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("GENERATE NARRATIVE", disabled=not sel_driver):
-            with st.spinner("RECONSTRUCTING RACE EVENTS..."):
+
+        # --- ACTION BUTTON ---
+        if st.button("GENERATE NARRATIVE REPORT", type="primary", disabled=not sel_driver, use_container_width=True):
+            with st.spinner("DECRYPTING RACE TELEMETRY..."):
                 stats = get_race_story_stats(race_id, sel_driver)
                 if stats:
                     story = narrate_race_story(stats)
+
+                    # --- SUCCESS RESULT ---
                     st.markdown(f"""
-                    <div class="glass-card" style="border-left: 4px solid #FF1801;">
+                    <div class="glass-card" style="border-left: 4px solid #FF1801; margin-top: 20px; animation: slideIn 0.5s ease-out;">
                         <div style="display:flex; justify-content:space-between; border-bottom:1px solid #444; padding-bottom:10px; margin-bottom:10px;">
-                            <span style="font-family:'Orbitron'; color:#aaa;">GRID: P{stats['grid']}</span>
-                            <span style="font-family:'Orbitron'; color:#fff;">FINISH: P{stats['finish']}</span>
-                            <span style="font-family:'Orbitron'; color:#FF1801;">{stats['status']}</span>
+                            <div>
+                                <span style="font-family:'Orbitron'; color:#aaa; font-size:0.8rem;">GRID</span>
+                                <span style="font-family:'Rajdhani'; font-size:1.5rem; font-weight:bold; color:white;">P{stats['grid']}</span>
+                            </div>
+                            <div style="text-align:right;">
+                                <span style="font-family:'Orbitron'; color:#aaa; font-size:0.8rem;">FINISH</span>
+                                <span style="font-family:'Rajdhani'; font-size:1.5rem; font-weight:bold; color:#FF1801;">P{stats['finish']}</span>
+                            </div>
                         </div>
-                        <div style="line-height:1.8; font-size:1.1rem; color:#e0e0e0;">
+                        <div style="margin-bottom: 15px; font-family:'Orbitron'; font-size:0.9rem; color:#FF1801;">
+                            STATUS: {stats['status'].upper()}
+                        </div>
+                        <div style="line-height:1.8; font-size:1.1rem; color:#e0e0e0; font-family: 'Rajdhani', sans-serif; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 4px;">
                             {story}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+
+        # --- IDLE STATE (If Button Not Clicked) ---
+        # This keeps the bottom area looking cool instead of empty
+        else:
+            idle_archive_html = """
+            <style>
+                .archive-placeholder {
+                    height: 250px;
+                    border: 1px dashed rgba(255, 255, 255, 0.1);
+                    background: rgba(0, 0, 0, 0.2);
+                    border-radius: 8px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    margin-top: 20px;
+                }
+                .tape-icon {
+                    font-size: 3rem;
+                    opacity: 0.5;
+                    margin-bottom: 10px;
+                    animation: spin-slow 10s linear infinite;
+                }
+                .archive-text {
+                    font-family: 'Orbitron';
+                    color: #666;
+                    font-size: 1rem;
+                    letter-spacing: 2px;
+                }
+                @keyframes spin-slow { 100% { transform: rotate(360deg); } }
+            </style>
+
+            <div class="archive-placeholder">
+                <div class="tape-icon">📼</div>
+                <div class="archive-text">ARCHIVE VAULT LOCKED</div>
+                <div style="font-size: 0.8rem; color: #444; margin-top: 5px; font-family: 'Rajdhani';">
+                    Select parameters to begin reconstruction
+                </div>
+            </div>
+            """
+            st.markdown(idle_archive_html, unsafe_allow_html=True)
