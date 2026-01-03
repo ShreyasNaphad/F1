@@ -128,8 +128,6 @@ def inject_custom_css():
             background-size: cover;
             background-attachment: fixed;
         }
-
-        /* Make the default background transparent so the gradient shows through */
         .stApp {
             background: transparent !important;
         }
@@ -138,15 +136,14 @@ def inject_custom_css():
         [data-testid="stHeader"] {
             background-color: rgba(0,0,0,0) !important;
         }
-
         [data-testid="stDecoration"] {
             display: none;
         }
 
         /* --- 3. SIDEBAR --- */
         section[data-testid="stSidebar"] {
-            background: rgba(0, 0, 0, 0.6) !important; /* Semi-transparent black */
-            backdrop-filter: blur(15px); /* Strong glass blur */
+            background: rgba(0, 0, 0, 0.6) !important; 
+            backdrop-filter: blur(15px); 
             border-right: 1px solid rgba(255, 255, 255, 0.1);
         }
 
@@ -154,7 +151,6 @@ def inject_custom_css():
         div[role="radiogroup"] > label > div:first-child {
             display: none !important;
         }
-
         div[role="radiogroup"] label {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -169,14 +165,12 @@ def inject_custom_css():
             display: flex;
             color: #ccc;
         }
-
         div[role="radiogroup"] label:hover {
             background: rgba(255, 255, 255, 0.15);
             border-left: 3px solid #00F0FF; 
             transform: translateX(5px);
             color: white;
         }
-
         div[role="radiogroup"] label[data-checked="true"] {
             background: linear-gradient(90deg, rgba(255, 24, 1, 0.6) 0%, rgba(0,0,0,0) 100%);
             border: 1px solid #FF1801;
@@ -184,7 +178,6 @@ def inject_custom_css():
             color: white !important;
             box-shadow: 0 0 20px rgba(255, 24, 1, 0.4);
         }
-
         div[role="radiogroup"] label p {
             font-weight: 600;
             letter-spacing: 1px;
@@ -197,9 +190,8 @@ def inject_custom_css():
             font-family: 'Orbitron', sans-serif; 
             text-transform: uppercase; 
             color: white;
-            text-shadow: 0 0 10px rgba(0, 240, 255, 0.5); /* Neon Glow on headers */
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
         }
-
         .glass-card {
             background: rgba(20, 20, 25, 0.6);
             backdrop-filter: blur(12px);
@@ -208,6 +200,60 @@ def inject_custom_css():
             padding: 20px;
             border-radius: 8px;
             margin-bottom: 15px;
+        }
+
+        /* --- 6. BUTTONS (FIX FOR RENDER) --- */
+        /* Primary (Simulate) - RED */
+        button[kind="primary"] {
+            background-color: #FF1801 !important;
+            border: 1px solid #FF1801 !important;
+            color: white !important;
+            font-family: 'Orbitron', sans-serif !important;
+            transition: all 0.3s ease !important;
+        }
+        button[kind="primary"]:hover {
+            background-color: #D00000 !important;
+            box-shadow: 0 0 15px rgba(255, 24, 1, 0.6) !important;
+            transform: scale(1.02);
+        }
+        
+        /* Secondary (Initialize AI) - Outline Red */
+        div.stButton > button[kind="secondary"] {
+            border: 1px solid #FF1801 !important;
+            color: #FF1801 !important;
+            font-family: 'Orbitron', sans-serif !important;
+            background: transparent !important;
+        }
+        div.stButton > button[kind="secondary"]:hover {
+            border-color: #00F0FF !important;
+            color: #00F0FF !important;
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.4) !important;
+        }
+
+        /* --- 7. INPUT FIELDS (FIX FOR BLACK BOXES) --- */
+        /* Force the dropdowns/text-boxes to be Grey/Glassy */
+        div[data-baseweb="select"] > div, 
+        div[data-baseweb="input"] > div {
+            background-color: rgba(255, 255, 255, 0.1) !important;
+            border-color: rgba(255, 255, 255, 0.2) !important;
+            color: white !important;
+        }
+        
+        /* Fix the text color inside the box */
+        div[data-baseweb="select"] span {
+            color: white !important;
+        }
+
+        /* Fix the dropdown menu popup (the list that appears) */
+        ul[data-baseweb="menu"] {
+            background-color: #0a0a0e !important;
+            border: 1px solid #333 !important;
+        }
+        
+        /* Highlight color in dropdown list */
+        li[aria-selected="true"] {
+            background-color: rgba(255, 24, 1, 0.3) !important;
+            color: white !important;
         }
 
     </style>
@@ -975,3 +1021,4 @@ elif mode == "Race Rewind":
             </div>
             """
             st.markdown(idle_archive_html, unsafe_allow_html=True)
+
