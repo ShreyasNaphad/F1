@@ -1,15 +1,7 @@
 [theme]
-# The primary color (This fixes the Blue buttons -> Red)
-primaryColor = "#FF1801"
-
-# Background color (Dark, matches your gradient feel)
-backgroundColor = "#0E1117"
-
-# Secondary background (This fixes the Black inputs -> Grey)
-secondaryBackgroundColor = "#262730"
-
-# Text color
-textColor = "#FAFAFA"
-
-# Font
-font = "sans serif"
+base="dark"
+primaryColor="#FF4B4B"
+backgroundColor="#0E1117"
+secondaryBackgroundColor="#262730"
+textColor="#FAFAFA"
+font="sans serif"
