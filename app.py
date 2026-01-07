@@ -7,7 +7,7 @@ import os
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(
-    page_title="F1 Telemetry Terminal",
+    page_title="F1 INTELLIGENCE TERMINAL",
     layout="wide",
     page_icon="🏎️",
     initial_sidebar_state="expanded"
@@ -114,6 +114,60 @@ def get_base64_of_bin_file(file_path):
         return base64.b64encode(data).decode()
     except Exception:
         return None
+
+
+def generate_persona_response(driver_name, user_query, stats, json_traits):
+    """
+    Generates an in-character response grounded in real stats + traits.
+    """
+
+    stats_context = (
+        f"Total races: {stats.get('races', 0)}, "
+        f"Wins: {stats.get('wins', 0)}, "
+        f"Average finish: {stats.get('avg_finish', 0):.1f}, "
+        f"Teams driven for: {', '.join(stats.get('teams', []))}"
+    )
+
+    traits_context = (
+        f"Skill level: {json_traits.get('skill_level', 'unknown')}, "
+        f"Consistency: {json_traits.get('consistency_level', 'unknown')}, "
+        f"Era reputation: {json_traits.get('data_reliability', 'unknown')}"
+    )
+
+    system_prompt = f"""
+SYSTEM:
+You are {driver_name}, a Formula 1 driver.
+- Speak ONLY in first person.
+- Stay in character.
+- Be reflective, honest, and concise (max 4 sentences).
+- Never mention being an AI.
+
+FACTUAL CONTEXT:
+{stats_context}
+{traits_context}
+
+USER QUESTION:
+{user_query}
+"""
+
+    try:
+        # Using your existing backend pipe
+        response = explain_driver(driver_name.split()[-1], system_prompt)
+        return response
+    except Exception as e:
+        return "Radio interference… I can't answer that right now."
+
+
+def get_driver_image_path(full_name):
+    """
+    Maps a driver name to a local image file.
+    You need to place images in an 'assets/drivers/' folder.
+    """
+    filename = full_name.lower().replace(" ", "_") + ".png"
+    path = os.path.join("assets", "drivers", filename)
+    if os.path.exists(path):
+        return path
+    return None  # Returns None if image not found (we will show a placeholder)
 
 
 def inject_custom_css():
@@ -421,7 +475,7 @@ def render_legacy_chart(full_name_a, full_name_b):
 # --- 6. HEADER ---
 c1, c2 = st.columns([3, 1])
 with c1:
-    st.markdown("<h1 class='neon-text'>F1 TELEMETRY TERMINAL</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='neon-text'>F1 INTELLIGENCE TERMINAL</h1>", unsafe_allow_html=True)
     st.markdown(
         "<div style='letter-spacing: 3px; color: #888; font-size: 0.9rem;'>AI-POWERED PERFORMANCE ANALYTICS V1.0</div>",
         unsafe_allow_html=True)
@@ -464,12 +518,14 @@ with st.sidebar:
                 unsafe_allow_html=True)
 
     # We add icons to the keys so they look like menu items
+    # UPDATED MENU
     mode = st.radio(
         "Navigation",
         [
             "⚡ SINGLE ANALYSIS",
             "⚔️ COMPARATIVE TELEMETRY",
             "🧬 DOPPELGÄNGER ENGINE",
+            "🧑‍🚀 DRIVERS ARCHIVE",  # <--- NEW ENTRY
             "📖 RACE REWIND"
         ],
         label_visibility="collapsed"
@@ -511,6 +567,8 @@ elif "COMPARATIVE" in mode:
     mode = "Comparative Telemetry"
 elif "DOPPELGÄNGER" in mode:
     mode = "Doppelgänger Engine"
+elif "DRIVERS ARCHIVE" in mode:
+    mode = "Drivers Archive"
 elif "RACE REWIND" in mode:
     mode = "Race Rewind"
 
@@ -646,166 +704,65 @@ elif mode == "Comparative Telemetry":
             render_legacy_chart(d_a_full, d_b_full)
 
 # =========================================================
-# =========================================================
 # MODULE 3: DOPPELGÄNGER ENGINE
 # =========================================================
 elif mode == "Doppelgänger Engine":
-    st.markdown("""
-        <style>
-            .doppel-header {
-                border-left: 4px solid #FF1801;
-                padding: 24px;
-                background: linear-gradient(90deg, #0a0a0a, #111);
-                margin-bottom: 30px;
-                border-radius: 0 8px 8px 0;
-            }
-            .hud-label {
-                color: #555;
-                font-family: "Orbitron";
-                font-size: 0.65rem;
-                letter-spacing: 2px;
-                margin-bottom: 8px;
-                display: block;
-            }
-            .section-spacer { margin-bottom: 25px; }
-            .card-grid {
-                display: grid;
-                grid-template-columns: repeat(3, 1fr);
-                gap: 20px;
-                margin-top: 10px;
-            }
-            .scanning-container {
-                height: 320px;
-                border: 1px solid #222;
-                background: radial-gradient(circle at center, #111, #050505);
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                position: relative;
-                border-radius: 8px;
-                margin-bottom: 20px;
-            }
-            .hud-bracket {
-                position: absolute;
-                width: 15px;
-                height: 15px;
-                border: 1px solid #444;
-            }
-            .top-left { top: 10px; left: 10px; border-right: none; border-bottom: none; }
-            .top-right { top: 10px; right: 10px; border-left: none; border-bottom: none; }
-            .bottom-left { bottom: 10px; left: 10px; border-right: none; border-top: none; }
-            .bottom-right { bottom: 10px; right: 10px; border-left: none; border-top: none; }
-        </style>
-
-        <div class="doppel-header">
-            <div style="display:flex; align-items:center; justify-content:space-between; border-bottom: 1px solid #222; padding-bottom: 15px;">
-                <div style="font-family:'Orbitron'; color:#FF1801; letter-spacing:3px; font-size:1.4rem;">
-                    🧬 DOPPELGÄNGER ENGINE 
-                    <span style="background:#FF1801; color:white; padding:3px 10px; font-size:0.6rem; vertical-align:middle; border-radius:2px; margin-left:15px; font-weight:bold;">LIVE_REGISTRY</span>
-                </div>
-                <div style="font-family:'Orbitron'; font-size:0.7rem; color:#444;">DATA_STREAM: STABLE // V3.2</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-    c_search, _, c_res = st.columns([1.2, 0.2, 2.5])
+    st.markdown("##### 🧬 STATISTICAL TWIN IDENTIFICATION")
+    c_search, c_res = st.columns([1, 2])
 
     with c_search:
-        st.markdown("<span class='hud-label'>>> TARGET DRIVER</span>", unsafe_allow_html=True)
-        target_twin = st.selectbox("Target Driver", DRIVER_LIST, label_visibility="collapsed")
+        st.markdown(
+            """<div style="font-size:0.8rem; color:#aaa; margin-bottom:10px;">Map driver telemetry against historical DNA.</div>""",
+            unsafe_allow_html=True)
+        target_twin_full = st.selectbox("Target Driver", DRIVER_LIST)
+        if target_twin_full:
+            st.markdown(
+                f"""<div style="background: rgba(0,0,0,0.3); border: 1px solid #00F0FF; padding: 12px; border-radius: 4px; margin: 15px 0; box-shadow: 0 0 10px rgba(0, 240, 255, 0.1);"><div style="color:#00F0FF; font-size:0.7rem; font-family:'Orbitron'; margin-bottom: 2px;">TARGET LOCKED</div><div style="color:white; font-weight:bold; font-size:1.1rem; letter-spacing: 1px;">{target_twin_full.upper()}</div></div>""",
+                unsafe_allow_html=True)
 
-        st.markdown("<div class='section-spacer'></div>", unsafe_allow_html=True)
-
-        st.markdown("<span class='hud-label'>>> SYSTEM_COMMANDS</span>", unsafe_allow_html=True)
-        if st.button("▶ INITIALIZE SCAN SEQUENCE", use_container_width=True, type="primary"):
-            with st.spinner("SYNCING TELEMETRY..."):
-                target_surname = target_twin.split()[-1]
-                matches = get_similar_drivers(target_surname, DRIVER_DATA)
-                if matches:
-                    st.session_state['matches'] = matches
+        if st.button("INITIATE SCAN", type="primary"):
+            if 'matches' in st.session_state: del st.session_state['matches']
+            target_surname = target_twin_full.split()[-1]
+            matches = get_similar_drivers(target_surname, DRIVER_DATA)
+            if matches:
+                st.session_state['matches'] = matches
+                with st.spinner("CALCULATING VECTOR ALIGNMENT..."):
                     st.session_state['vec_exp'] = explain_similarity_multi(target_surname, matches)
-                    st.rerun()
-                else:
-                    st.error("ERR: NO_MATCH_FOUND_IN_HISTORICAL_INDEX")
-
-
+            else:
+                st.error("INSUFFICIENT DATA.")
 
     with c_res:
-        if 'matches' not in st.session_state:
-            st.markdown(f"""
-            <div class="scanning-container">
-                <div class="hud-bracket top-left"></div><div class="hud-bracket top-right"></div>
-                <div class="hud-bracket bottom-left"></div><div class="hud-bracket bottom-right"></div>
-                <div class="scanning-line" style="height: 1px; background: linear-gradient(90deg, transparent, #00f0ff, transparent); width: 100%; position: absolute; animation: scan 3s linear infinite;"></div>
-                <div style="font-family: 'Orbitron'; color: #333; font-size: 0.8rem; letter-spacing: 5px; text-align:center;">
-                    AWAITING_INPUT<br>
-                    <span style="font-size:0.6rem; color:#222;">SYSTEM_READY</span>
-                </div>
-            </div>
-            <style>
-                @keyframes scan {{ 
-                    0% {{ top: 5%; opacity: 0; }} 
-                    20% {{ opacity: 1; }} 
-                    80% {{ opacity: 1; }} 
-                    100% {{ top: 95%; opacity: 0; }} 
-                }}
-            </style>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("<span class='hud-label'>>> NEURAL_MATCH_CORRELATION</span>", unsafe_allow_html=True)
-            cols = st.columns(3)
+        if 'matches' in st.session_state:
             matches = st.session_state['matches']
+            cols = st.columns(3)
             for i, col in enumerate(cols):
                 if i < len(matches):
                     m = matches[i]
                     pct = int(m['similarity_score'] * 100)
                     with col:
-                        st.markdown(f"""
-                        <div class="match-card" style="background: linear-gradient(145deg, #111, #080808); border: 1px solid #222; border-top: 3px solid #00f0ff; padding: 20px; border-radius: 4px; height: 160px; display:flex; flex-direction:column; justify-content:space-between;">
-                            <div>
-                                <div style="font-size:0.55rem; color:#555; font-family:'Orbitron';">SUBJECT_{i + 1:02d}</div>
-                                <div style="font-size:1.2rem; font-weight:bold; color:white; font-family:'Orbitron'; margin-top: 5px;">{m['surname'].upper()}</div>
-                            </div>
-                            <div>
-                                <div style="font-family:'Orbitron'; color:#00f0ff; font-size:1.8rem; line-height:1;">{pct}%</div>
-                                <div style="font-size:0.6rem; color:#444; font-family:'Rajdhani'; letter-spacing:1px; margin-top:5px;">MATCH_PROBABILITY</div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-    if 'matches' in st.session_state:
-        st.markdown("<div style='margin-bottom:40px;'></div>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <div class="glass-card" style="background: rgba(20, 20, 20, 0.6); border: 1px solid #333; padding: 30px; border-radius: 8px; border-left: 5px solid #00F0FF;">
-            <div style="color:#00F0FF; font-family:'Orbitron'; font-size:1rem; margin-bottom:20px; display: flex; align-items: center; gap: 15px;">
-                <div style="width: 12px; height: 12px; border: 2px solid #00f0ff; border-radius:50%; animation: pulse 2s infinite;"></div>
-                TACTICAL MATCH
-            </div>
-            <div style="color:#ccc; line-height: 1.8; font-size: 1.05rem; font-family: 'Rajdhani', sans-serif; letter-spacing: 0.5px;">
-                {st.session_state.get('vec_exp', 'Processing neural correlations...')}
-            </div>
-        </div>
-        <style>
-            @keyframes pulse {{ 
-                0% {{ transform: scale(1); opacity: 1; }} 
-                50% {{ transform: scale(1.5); opacity: 0.3; }} 
-                100% {{ transform: scale(1); opacity: 1; }} 
-            }}
-        </style>
-        """, unsafe_allow_html=True)
-
-# =========================================================
-# MODULE 4: RACE REWIND
-# =========================================================
-
-# =========================================================
-# MODULE 4: RACE REWIND
-# =========================================================
-
-# =========================================================
-# MODULE 4: RACE REWIND
-# =========================================================
+                        st.markdown(
+                            f"""<div class="glass-card" style="text-align:center; border-top:3px solid #00F0FF;"><div style="font-size:0.7rem; color:#888;">MATCH #{i + 1}</div><div style="font-size:1.2rem; font-weight:bold; color:white; margin:5px 0;">{m['surname']}</div><div style="font-size:2rem; font-family:'Orbitron'; color:#00F0FF;">{pct}%</div></div>""",
+                            unsafe_allow_html=True)
+            st.markdown(
+                f"""<div class="glass-card" style="margin-top:10px;"><div style="color:#00F0FF; font-family:'Orbitron'; font-size:0.9rem; margin-bottom:10px; border-bottom:1px solid #333; padding-bottom:5px;">>> ANALYTICS</div><div style="color:#ccc; line-height:1.6;">{st.session_state.get('vec_exp', '...')}</div></div>""",
+                unsafe_allow_html=True)
+        else:
+            idle_html = """
+            <style>
+                .holo-container {
+                    height: 350px; background-color: #050505;
+                    background-image: linear-gradient(rgba(0, 240, 255, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 240, 255, 0.1) 1px, transparent 1px);
+                    background-size: 40px 40px; border: 1px solid #333; border-radius: 8px;
+                    display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; box-shadow: inset 0 0 50px rgba(0,0,0,0.8);
+                }
+                .holo-icon { font-size: 4rem; color: rgba(0, 240, 255, 0.8); text-shadow: 0 0 20px rgba(0, 240, 255, 0.6); margin-bottom: 20px; animation: float 3s ease-in-out infinite; }
+                @keyframes float { 0% { transform: translateY(0px); opacity: 0.8; } 50% { transform: translateY(-10px); opacity: 1; } 100% { transform: translateY(0px); opacity: 0.8; } }
+                .holo-text { font-family: 'Orbitron'; color: white; font-size: 1.5rem; letter-spacing: 4px; background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 4px; }
+                .holo-sub { font-family: 'Rajdhani'; color: #00F0FF; margin-top: 5px; font-size: 1rem; text-transform: uppercase; }
+            </style>
+            <div class="holo-container"><div class="holo-icon">🧬</div><div class="holo-text">SYSTEM IDLE</div><div class="holo-sub">Initialize Driver Scan</div></div>
+            """
+            st.markdown(idle_html, unsafe_allow_html=True)
 # =========================================================
 # MODULE 4: RACE REWIND (ARCHIVE UI OVERHAUL)
 # =========================================================
@@ -975,3 +932,239 @@ elif mode == "Race Rewind":
             </div>
             """
             st.markdown(idle_archive_html, unsafe_allow_html=True)
+
+# =========================================================
+# =========================================================
+# MODULE 5: DRIVERS ARCHIVE
+# =========================================================
+elif mode == "Drivers Archive":
+
+    # ---------- STATE ----------
+    if "archive_selection" not in st.session_state:
+        st.session_state["archive_selection"] = None
+
+    def clear_selection():
+        st.session_state["archive_selection"] = None
+
+    # =====================================================
+    # VIEW 1: DRIVER GRID (CHARACTER SELECT)
+    # =====================================================
+    if st.session_state["archive_selection"] is None:
+
+        st.markdown("##### 🧑‍🚀SELECT PERSONA")
+
+        archive_legends = [
+            "Lando Norris", "Lewis Hamilton", "Max Verstappen",
+            "Oscar Piastri", "Sebastian Vettel", "Charles Leclerc",
+            "Fernando Alonso", "Niki Lauda", "Michael Schumacher",
+            "Charles Leclerc", "Michael Schumacher", "Nigel Mansell"
+        ]
+
+        available_legends = [d for d in archive_legends if d in DRIVER_LIST]
+        cols = st.columns(4)
+
+        for i, driver in enumerate(available_legends):
+            with cols[i % 4]:
+                d_json = get_json_stats(driver)
+
+                # ---- DRIVER IMAGE ----
+                img_path = get_driver_image_path(driver)
+                if img_path:
+                    st.image(img_path, use_container_width=True)
+                else:
+                    st.markdown("""
+                    <div style="height:140px; background:#111;
+                                border:1px solid #333;
+                                display:flex; align-items:center; justify-content:center;
+                                border-radius:8px;">
+                        <div style="font-family:'Orbitron'; color:#666;">NO IMAGE</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # ---- DRIVER CARD ----
+                st.markdown(f"""
+                <div style="margin-top:-6px; border:1px solid #333; border-radius:0 0 8px 8px;
+                            background:rgba(255,255,255,0.05); padding:10px;">
+                    <div style="font-family:'Orbitron'; font-size:0.85rem;
+                                letter-spacing:1px; color:#fff;">
+                        {driver.upper()}
+                    </div>
+                    <div style="font-family:'Rajdhani'; font-size:0.75rem;
+                                color:#888; margin-top:2px;">
+                        {d_json.get('team_name', 'LEGEND')}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # ---- ACTION BUTTON ----
+                if st.button("ACCESS DRIVER", key=f"arc_{i}", use_container_width=True):
+                    st.session_state["archive_selection"] = driver
+                    st.rerun()
+
+
+    # =====================================================
+    # VIEW 2: DRIVER PERSONA INTERFACE
+    # =====================================================
+    else:
+        target_driver = st.session_state["archive_selection"]
+        surname = target_driver.split()[-1]
+
+        st.button("← RETURN TO ARCHIVE", on_click=clear_selection)
+
+        # ---------- LOAD DRIVER DATA ----------
+        df_d = RACE_DATA_CACHE[RACE_DATA_CACHE["full_name"] == target_driver]
+
+        total_races = df_d["raceId"].nunique()
+        wins = df_d[df_d["positionOrder"] == 1]["raceId"].nunique()
+
+        valid_finishes = df_d[df_d["positionOrder"].notna()]
+        avg_finish = valid_finishes["positionOrder"].mean()
+
+        # ---------- CONSTRUCTORS ----------
+        df_cons = pd.read_csv("data/constructors.csv")
+        df_cons = df_cons.rename(columns={"name": "constructor_name"})
+
+        df_d = df_d.merge(
+            df_cons[["constructorId", "constructor_name"]],
+            on="constructorId",
+            how="left"
+        )
+
+        teams = df_d["constructor_name"].dropna().unique().tolist()
+
+        # ---------- ERA ----------
+        first_year = df_d["year"].min()
+        last_year = df_d["year"].max()
+
+        if last_year >= 2023:
+            era = "Modern Era"
+        elif last_year >= 2014:
+            era = "Hybrid Era"
+        elif last_year >= 2000:
+            era = "V10 / V8 Era"
+        elif last_year >= 1980:
+            era = "Turbo Era"
+        else:
+            era = "Classic Era"
+
+        d_json = get_json_stats(target_driver)
+
+        col_L, col_R = st.columns([1, 2])
+
+        # ---------------- LEFT PANEL ----------------
+        with col_L:
+            img_path = get_driver_image_path(target_driver)
+            if img_path:
+                st.image(img_path, use_container_width=True)
+            else:
+                st.markdown("""
+                <div style="height:300px; background:#111;
+                            border:2px solid #333; border-radius:10px;
+                            display:flex; align-items:center; justify-content:center;">
+                    <div style="font-family:'Orbitron'; color:#666;">NO IMAGE DATA</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            if wins > 20:
+                quote = "I didn’t race to participate. I raced to dominate."
+            elif total_races > 100:
+                quote = "Consistency was my weapon. The grid was my home."
+            else:
+                quote = "Every lap was a battle for survival."
+
+            st.markdown(f"""
+            <div style="margin-top:15px; border-left:3px solid #00F0FF; padding-left:15px;">
+                <div style="font-family:'Rajdhani'; font-style:italic;
+                            font-size:1.25rem; line-height:1.6; color:#fff;">
+                    "{quote}"
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ---------------- RIGHT PANEL ----------------
+        with col_R:
+            # ---------- DATA DECK ----------
+            # FIX: We remove the indentation inside the string so Markdown doesn't treat it as a code block
+            st.markdown(f"""
+        <div class="glass-card">
+            <div style="display:grid; grid-template-columns: repeat(4,1fr); gap:10px; text-align:center;">
+                <div>
+                    <div style="font-family:'Orbitron'; font-size:0.65rem; letter-spacing:1px; color:#888;">RACES</div>
+                    <div style="font-family:'Orbitron'; font-size:1.6rem; color:white;">{total_races}</div>
+                </div>
+                <div>
+                    <div style="font-family:'Orbitron'; font-size:0.65rem; letter-spacing:1px; color:#888;">WINS</div>
+                    <div style="font-family:'Orbitron'; font-size:1.6rem; color:#FF1801;">{wins}</div>
+                </div>
+                <div>
+                    <div style="font-family:'Orbitron'; font-size:0.65rem; letter-spacing:1px; color:#888;">AVG FINISH</div>
+                    <div style="font-family:'Orbitron'; font-size:1.6rem; color:white;">{avg_finish:.1f}</div>
+                </div>
+                <div>
+                    <div style="font-family:'Orbitron'; font-size:0.65rem; letter-spacing:1px; color:#888;">ERA</div>
+                    <div style="font-family:'Orbitron'; font-size:1.4rem; color:white;">{era}</div>
+                </div>
+            </div>
+            <div style="margin-top:15px; border-top:1px solid #333; padding-top:10px;">
+                <span style="font-family:'Orbitron'; font-size:0.7rem; letter-spacing:1px; color:#00F0FF;">
+                    KNOWN TEAMS:
+                </span>
+                <span style="font-family:'Rajdhani'; font-size:0.95rem; color:#aaa;">
+                    {", ".join(teams[:4])}
+                </span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+            # ---------- CHAT ----------
+            st.markdown("##### 💬 ASK THE DRIVER")
+            if "archive_chat" not in st.session_state:
+                st.session_state["archive_chat"] = []
+
+            if (
+                "last_archive_driver" not in st.session_state
+                or st.session_state["last_archive_driver"] != target_driver
+            ):
+                st.session_state["archive_chat"] = []
+                st.session_state["last_archive_driver"] = target_driver
+
+            for q, a in st.session_state["archive_chat"]:
+                st.markdown(f"""
+                <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:5px; margin-bottom:5px;">
+                    <div style="font-family:'Orbitron'; font-size:0.65rem; letter-spacing:1px; color:#888;">YOU</div>
+                    <div style="font-family:'Rajdhani'; font-size:1rem; color:white;">{q}</div>
+                </div>
+
+                <div style="background:rgba(0,240,255,0.1); border-left:3px solid #00F0FF;
+                            padding:10px; border-radius:0 5px 5px 0; margin-bottom:15px;">
+                    <div style="font-family:'Orbitron'; font-size:0.65rem; letter-spacing:1px; color:#00F0FF;">
+                        {surname.upper()}
+                    </div>
+                    <div style="font-family:'Rajdhani'; font-size:1.1rem; line-height:1.6; color:white;">
+                        {a}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with st.form("archive_chat_form"):
+                user_q = st.text_input("Interview Question",
+                                       placeholder=f"Ask {surname} about their greatest race…")
+                send = st.form_submit_button("TRANSMIT MESSAGE")
+
+            if send and user_q:
+                stats_payload = {
+                    "races": total_races,
+                    "wins": wins,
+                    "avg_finish": avg_finish,
+                    "teams": teams
+                }
+
+                reply = generate_persona_response(
+                    target_driver,
+                    user_q,
+                    stats_payload,
+                    d_json
+                )
+
+                st.session_state["archive_chat"].append((user_q, reply))
+                st.rerun()
