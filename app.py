@@ -164,7 +164,7 @@ def get_driver_image_path(full_name):
     You need to place images in an 'assets/drivers/' folder.
     """
     filename = full_name.lower().replace(" ", "_") + ".png"
-    path = os.path.join("assets", "drivers", filename)
+    path = os.path.join("assets", filename)
     if os.path.exists(path):
         return path
     return None  # Returns None if image not found (we will show a placeholder)
@@ -1168,3 +1168,4 @@ elif mode == "Drivers Archive":
 
                 st.session_state["archive_chat"].append((user_q, reply))
                 st.rerun()
+
